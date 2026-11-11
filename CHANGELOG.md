@@ -5,6 +5,11 @@ follow semantic versioning as described in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- `tools/build_web.sh` remaps source paths, so the browser module no longer carries the builder's home directory in
+  its panic locations.
+
 ## [0.3.7] - 2026-11-10
 
 ### Changed
