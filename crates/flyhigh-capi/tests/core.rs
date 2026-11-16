@@ -190,3 +190,20 @@ fn a_panic_inside_a_call_becomes_an_error_not_an_abort() {
     assert_eq!(r, -1);
     assert!(last_error().contains("boom"), "{}", last_error());
 }
+
+#[test]
+fn vulkan_interop_calls_check_their_arguments_over_c() {
+    assert_eq!(flyhigh::fh_vk_row_pitch(1), 256);
+    assert_eq!(flyhigh::fh_vk_row_pitch(1920), 7680);
+    assert_eq!(flyhigh::fh_vk_row_pitch(1366), 5632);
+    let memory = flyhigh::FhVkMemory { handle: 0, allocation_size: 0, memory_type_index: 0 };
+    assert!(unsafe { flyhigh::fh_vk_buffer_import(std::ptr::null(), &memory, 1024) }.is_null());
+    assert!(last_error().contains("null"), "{}", last_error());
+    assert!(unsafe { flyhigh::fh_vk_semaphore_import(std::ptr::null(), 0, 1) }.is_null());
+    assert_eq!(unsafe { flyhigh::fh_engine_vulkan_interop(std::ptr::null(), std::ptr::null_mut()) }, -1);
+    assert_eq!(unsafe { flyhigh::fh_vk_signal(std::ptr::null(), std::ptr::null(), 1) }, -1);
+    unsafe {
+        flyhigh::fh_vk_buffer_destroy(std::ptr::null_mut());
+        flyhigh::fh_vk_semaphore_destroy(std::ptr::null_mut());
+    }
+}

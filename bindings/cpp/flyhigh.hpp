@@ -211,6 +211,16 @@ public:
     }
     void warmUp() { detail::check(fh_stream_warm_up(h_.get(), e_), "fh_stream_warm_up"); }
     void reset() { detail::check(fh_stream_reset(h_.get()), "fh_stream_reset"); }
+    /// A frame from the host's Vulkan device into input slot `slot`, after `wait` reaches `value`.
+    void copyIn(uint32_t slot, const FhVkBuffer* b, uint32_t bytesPerRow, const FhVkSemaphore* wait = nullptr,
+                uint64_t value = 0) {
+        detail::check(fh_stream_copy_in(h_.get(), e_, slot, b, bytesPerRow, wait, value), "fh_stream_copy_in");
+    }
+    /// Output slot `out` into the host's buffer, then `signal` at `value`.
+    void copyOut(uint32_t out, const FhVkBuffer* b, uint32_t bytesPerRow, const FhVkSemaphore* signal = nullptr,
+                 uint64_t value = 0) const {
+        detail::check(fh_stream_copy_out(h_.get(), e_, out, b, bytesPerRow, signal, value), "fh_stream_copy_out");
+    }
     std::string report() const {
         return detail::json([&](char* b, size_t n) { return fh_stream_report_json(h_.get(), b, n); }, "fh_stream_report_json");
     }
@@ -219,6 +229,31 @@ private:
     const FhEngine* e_;
     Handle<FhStream, fh_stream_destroy> h_;
     uint32_t w_, hgt_;
+};
+
+/// Memory exported by the host's Vulkan device (fh_vk_buffer_import).
+class VkBuffer {
+public:
+    VkBuffer(const Engine& e, const FhVkMemory& m, uint64_t size) : h_(fh_vk_buffer_import(e.get(), &m, size)) {
+        if (!h_) throw detail::last("fh_vk_buffer_import");
+    }
+    FhVkBuffer* get() const { return h_.get(); }
+
+private:
+    Handle<FhVkBuffer, fh_vk_buffer_destroy> h_;
+};
+
+/// A semaphore exported by the host's Vulkan device (fh_vk_semaphore_import).
+class VkSemaphore {
+public:
+    VkSemaphore(const Engine& e, intptr_t handle, bool timeline)
+        : h_(fh_vk_semaphore_import(e.get(), handle, timeline ? 1u : 0u)) {
+        if (!h_) throw detail::last("fh_vk_semaphore_import");
+    }
+    FhVkSemaphore* get() const { return h_.get(); }
+
+private:
+    Handle<FhVkSemaphore, fh_vk_semaphore_destroy> h_;
 };
 
 /// What to present on this display tick and what to generate (ARCHITECTURE.md); milliseconds of the host's

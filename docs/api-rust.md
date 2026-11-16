@@ -46,7 +46,9 @@ let rgba = s.read_rgba(out)?.block(engine.gpu())?;            // or present s.ou
   `mid_views` take `(id, &TextureView)` pairs; the view behind an id must never change. `add_input_texture(texture)`
   makes a texture the host owns an input slot (the frame size, rgba8 or bgra8, sampleable); on Windows
   `interop::d3d11_shared_texture(&engine, handle, &SharedTexture::rgba8(w, h))` imports a D3D11 shared texture into
-  the Vulkan device without a copy for exactly that.
+  the Vulkan device without a copy for exactly that. A host on its own Vulkan device (Windows, Linux) hands frames over
+  through `vulkan_interop`: exported buffers (`import_buffer`) and timeline semaphores (`import_semaphore`), with
+  `copy_in` into an input slot after a wait and `copy_out` from an output slot before a signal ([C API](api-c.md#vulkan-interop)).
 
 ## Stream
 

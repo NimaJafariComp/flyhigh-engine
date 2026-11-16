@@ -74,6 +74,7 @@ included at compile time, so there is one copy of every kernel for all targets.
 | `gen_tex.rs` | the texture-path generator with modes (realtime, video with lookahead, cadence) that the Stream wraps |
 | `gmhs.rs` | the repair stage and the cadence statistics and composite |
 | `interop.rs` | Windows: a D3D11 shared texture into the Vulkan device without a copy |
+| `vulkan_interop.rs` | Windows, Linux: frames from another Vulkan device through exported buffers and semaphores |
 | `api.rs` | the CPU convenience: `api::Engine`, `api::Generator`, frames as bytes |
 
 | Other crates and directories | Role |
@@ -278,7 +279,8 @@ Native (`examples/player`, the `interop` module):
 | Piece | Does |
 |---|---|
 | ticks | Windows: DWM vblank timing with a PLL that keeps the phase; elsewhere the window system's frame callbacks |
-| `interop::d3d11_shared_texture(engine, handle, &desc)` | a D3D11 shared texture (screen capture) into the Vulkan device without a copy, then `add_input_texture` on a session or a stream; C: `fh_session_import_d3d11` / `fh_stream_import_d3d11`. DX12 import, Vulkan external memory on Linux and IOSurface on macOS are open |
+| `interop::d3d11_shared_texture(engine, handle, &desc)` | a D3D11 shared texture (screen capture) into the Vulkan device without a copy, then `add_input_texture` on a session or a stream; C: `fh_session_import_d3d11` / `fh_stream_import_d3d11`. DX12 import and IOSurface on macOS are open |
+| `vulkan_interop` | a host's own Vulkan device (an emulator, a game) on the same GPU: frames in and out through buffers it exports, ordered by timeline semaphores in both directions; the engine keeps its own device and queue. C: `fh_vk_*`, `fh_stream_copy_in` / `fh_stream_copy_out` |
 | presentation | the host's swapchain; the engine hands back the output texture, the host blits or composites it |
 
 A plugin for OBS or a media framework is a native host with frames arriving as textures or buffers: the same import

@@ -550,6 +550,7 @@ dependencies = [
 name = "flyhigh-capi"
 version = "0.3.7"
 dependencies = [
+ "anyhow",
  "flyhigh-engine",
  "serde_json",
  "wgpu",
@@ -575,6 +576,7 @@ name = "flyhigh-engine"
 version = "0.3.7"
 dependencies = [
  "anyhow",
+ "ash",
  "bytemuck",
  "flyhigh-options",
  "half",

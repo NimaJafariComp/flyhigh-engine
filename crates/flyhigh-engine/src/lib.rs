@@ -15,6 +15,8 @@ pub mod net;
 pub mod ops;
 pub mod options;
 pub mod session;
+#[cfg(all(any(windows, target_os = "linux"), not(target_arch = "wasm32")))]
+pub mod vulkan_interop;
 
 // Every type and function keeps its pre-split path at the crate root.
 #[cfg(not(target_arch = "wasm32"))]

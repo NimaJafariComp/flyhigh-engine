@@ -160,24 +160,27 @@ impl Gpu {
         // fused4 (coop-only microbench kernel) stages ~23 KB in shared; the WebGPU default is 16 KB and the portable
         // kernels fit in it, so ask for 32 KB only where the adapter has it
         let wg_storage = alim.max_compute_workgroup_storage_size.clamp(16384, 32768);
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("flyhigh"),
-                required_features: feats,
-                required_limits: wgpu::Limits {
-                    max_compute_workgroup_storage_size: wg_storage,
-                    ..wgpu::Limits::default()
-                },
-                memory_hints: if opts.compact_memory {
-                    wgpu::MemoryHints::MemoryUsage
-                } else {
-                    wgpu::MemoryHints::Performance
-                },
-                experimental_features: unsafe { wgpu::ExperimentalFeatures::enabled() },
-                trace: wgpu::Trace::Off,
-            })
-            .await
-            .map_err(|e| anyhow::anyhow!("no wgpu device: {e:?}"))?;
+        let desc = wgpu::DeviceDescriptor {
+            label: Some("flyhigh"),
+            required_features: feats,
+            required_limits: wgpu::Limits { max_compute_workgroup_storage_size: wg_storage, ..wgpu::Limits::default() },
+            memory_hints: if opts.compact_memory {
+                wgpu::MemoryHints::MemoryUsage
+            } else {
+                wgpu::MemoryHints::Performance
+            },
+            experimental_features: unsafe { wgpu::ExperimentalFeatures::enabled() },
+            trace: wgpu::Trace::Off,
+        };
+        // hosts on their own Vulkan device hand frames over through external memory and semaphores
+        #[cfg(all(any(windows, target_os = "linux"), not(target_arch = "wasm32")))]
+        let opened = crate::vulkan_interop::open_device(&adapter, &desc);
+        #[cfg(not(all(any(windows, target_os = "linux"), not(target_arch = "wasm32"))))]
+        let opened: Option<Result<(wgpu::Device, wgpu::Queue)>> = None;
+        let (device, queue) = match opened {
+            Some(opened) => opened?,
+            None => adapter.request_device(&desc).await.map_err(|e| anyhow::anyhow!("no wgpu device: {e:?}"))?,
+        };
         let gpu = Gpu::assemble(instance, adapter, device, queue, opts, caps);
         if verbose {
             if let Some(c) = gpu.shader_compiler {

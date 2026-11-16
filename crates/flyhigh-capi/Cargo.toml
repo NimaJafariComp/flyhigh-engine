@@ -14,3 +14,4 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 flyhigh-engine.workspace = true
 serde_json.workspace = true
 wgpu.workspace = true
+anyhow.workspace = true

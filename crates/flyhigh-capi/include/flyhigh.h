@@ -7,8 +7,8 @@
  *   FhStream     frames with timestamps in, intervals out (fh_stream_*): the ring, the pair classifier, cadence
  *   FhPacer      what to present on this display tick and what to generate (fh_pacer_*): pure logic, no clock
  *   FhGenerator  the CPU convenience (fh_generator_*): source frames in, the frames to display out, in order
- * Frames cross this ABI as RGBA8 bytes (width * height * 4); GPU textures come in through the interop calls
- * (fh_session_import_d3d11, fh_stream_import_d3d11).
+ * Frames cross this ABI as RGBA8 bytes (width * height * 4); GPU frames come in through the interop calls
+ * (fh_session_import_d3d11, fh_stream_import_d3d11; fh_vk_* from the host's own Vulkan device).
  * Single-threaded use per handle. Errors: a call returns NULL or -1 and fh_last_error() holds the message.
  * Options: always start from the fh_*_options_default() struct and change what you need.
  */
@@ -261,6 +261,34 @@ int          fh_generator_push(FhGenerator* generator, const uint8_t* rgba, size
 /* pop the next output frame into rgba (cap >= width*height*4); 1 = frame written (phase / real filled, either may be
  * NULL), 0 = queue empty, -1 = error */
 int          fh_generator_pop(FhGenerator* generator, uint8_t* rgba, size_t cap, float* phase, int* real);
+
+/* ---- Vulkan interop: frames from the host's own Vulkan device (Windows, Linux) ----
+ * The host exports memory and semaphores on the same GPU (compare its deviceUUID with fh_engine_vulkan_interop's):
+ * NT handles on Windows (OPAQUE_WIN32), file descriptors on Linux (OPAQUE_FD; owned by the engine once imported).
+ * Frames cross as RGBA8 rows of fh_vk_row_pitch(width) bytes in buffers: a dedicated allocation for a buffer with
+ * TRANSFER_SRC | TRANSFER_DST usage, imported with the exporter's allocation size and memory type index.
+ * copy_in waits on a semaphore before the engine reads the frame, copy_out signals one after the engine wrote it.
+ * Values: a timeline semaphore takes the value to wait for / signal (above 0); a binary one takes 0 and needs its
+ * signal submitted before the wait. */
+typedef struct FhVkBuffer FhVkBuffer;
+typedef struct FhVkSemaphore FhVkSemaphore;
+typedef struct FhVkMemory {
+    intptr_t handle;
+    uint64_t allocation_size;
+    uint32_t memory_type_index;
+} FhVkMemory;
+
+int            fh_engine_vulkan_interop(const FhEngine* engine, uint8_t* uuid);   /* 1 supported (uuid: 16 bytes or NULL), 0 not, -1 */
+uint32_t       fh_vk_row_pitch(uint32_t width);
+FhVkBuffer*    fh_vk_buffer_import(const FhEngine* engine, const FhVkMemory* memory, uint64_t size);
+void           fh_vk_buffer_destroy(FhVkBuffer* buffer);
+FhVkSemaphore* fh_vk_semaphore_import(const FhEngine* engine, intptr_t handle, uint32_t timeline);
+void           fh_vk_semaphore_destroy(FhVkSemaphore* semaphore);                  /* waits for the engine's queue */
+int            fh_vk_signal(const FhEngine* engine, const FhVkSemaphore* semaphore, uint64_t value);   /* nothing copied */
+int            fh_stream_copy_in(FhStream* stream, const FhEngine* engine, uint32_t slot, const FhVkBuffer* buffer, uint32_t bytes_per_row, const FhVkSemaphore* wait, uint64_t value);
+int            fh_stream_copy_out(const FhStream* stream, const FhEngine* engine, uint32_t out, const FhVkBuffer* buffer, uint32_t bytes_per_row, const FhVkSemaphore* signal, uint64_t value);
+int            fh_session_copy_in(FhSession* session, const FhEngine* engine, uint32_t slot, const FhVkBuffer* buffer, uint32_t bytes_per_row, const FhVkSemaphore* wait, uint64_t value);
+int            fh_session_copy_out(const FhSession* session, const FhEngine* engine, uint32_t out, const FhVkBuffer* buffer, uint32_t bytes_per_row, const FhVkSemaphore* signal, uint64_t value);
 
 #ifdef __cplusplus
 }

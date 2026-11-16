@@ -32,7 +32,8 @@ Parity: the v6p golden (`fixtures/v6p`, K 2, t 0.5), flow L1 in network pixels a
 | Path | Date | Result |
 |---|---|---|
 | D3D11 shared texture into the Vulkan engine (Windows) | 2026-11-02 | `interop::d3d11_shared_texture`: two frames written by a D3D11 device, imported without a copy, their in-between at MAE 0.26 to the true middle (the same as uploaded frames); the 4060 Ti exposes `VK_KHR_external_memory_win32` |
-| D3D12 shared handles, Vulkan external memory (Linux, Android), Metal IOSurface | | open |
+| Another Vulkan device's memory and semaphores (Windows, Linux) | 2026-11-16 | `vulkan_interop`: a host device of its own on the same GPU writes two frames into exported buffers and signals a timeline semaphore; the engine waits for it, generates and signals back; the in-between is byte for byte the one from uploaded frames (4060 Ti, `tests/interop_vulkan.rs`). The engine enables `VK_KHR_external_memory_*` and `VK_KHR_external_semaphore_*` whenever the adapter has both |
+| D3D12 shared handles, Vulkan external memory on Android, Metal IOSurface | | open |
 
 ## Mobile
 
