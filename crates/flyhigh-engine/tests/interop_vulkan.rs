@@ -83,6 +83,30 @@ impl Host {
         let family = unsafe { instance.get_physical_device_queue_family_properties(physical) }.iter().position(|f| {
             f.queue_flags.contains(vk::QueueFlags::TRANSFER) || f.queue_flags.contains(vk::QueueFlags::GRAPHICS)
         })? as u32;
+        // software drivers may import but not export these, or not timeline semaphores
+        let mut timeline_kind = vk::SemaphoreTypeCreateInfo::default().semaphore_type(vk::SemaphoreType::TIMELINE);
+        let semaphore_query = vk::PhysicalDeviceExternalSemaphoreInfo::default()
+            .handle_type(SEMAPHORE_HANDLE)
+            .push_next(&mut timeline_kind);
+        let mut semaphore_props = vk::ExternalSemaphoreProperties::default();
+        unsafe {
+            instance.get_physical_device_external_semaphore_properties(physical, &semaphore_query, &mut semaphore_props)
+        };
+        let buffer_query = vk::PhysicalDeviceExternalBufferInfo::default()
+            .usage(vk::BufferUsageFlags::TRANSFER_SRC | vk::BufferUsageFlags::TRANSFER_DST)
+            .handle_type(MEMORY_HANDLE);
+        let mut buffer_props = vk::ExternalBufferProperties::default();
+        unsafe { instance.get_physical_device_external_buffer_properties(physical, &buffer_query, &mut buffer_props) };
+        let exportable = semaphore_props
+            .external_semaphore_features
+            .contains(vk::ExternalSemaphoreFeatureFlags::EXPORTABLE | vk::ExternalSemaphoreFeatureFlags::IMPORTABLE)
+            && buffer_props
+                .external_memory_properties
+                .external_memory_features
+                .contains(vk::ExternalMemoryFeatureFlags::EXPORTABLE | vk::ExternalMemoryFeatureFlags::IMPORTABLE);
+        if !exportable {
+            return None;
+        }
         #[cfg(windows)]
         let extensions =
             [ash::khr::external_memory_win32::NAME.as_ptr(), ash::khr::external_semaphore_win32::NAME.as_ptr()];

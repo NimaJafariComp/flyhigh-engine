@@ -6,6 +6,7 @@
 |---|---|
 | CPU bytes (decoded video, screenshots, any language) | the Core through [C](api-c.md) (`fh_session_*`) or [Rust](api-rust.md) (`Session::write_rgba` / `read_rgba`), or the CPU convenience `api::Generator` / `fh_generator_*`: RGBA8 in, RGBA8 out, one upload and one readback per frame |
 | GPU textures in a Rust / wgpu app | [`Session`](api-rust.md) on your own views, or the [`Stream`](api-rust.md#stream) when frames carry timestamps: no CPU copies; `examples/player/src/main.rs` |
+| GPU images on your own Vulkan device (an emulator, a game) | [Vulkan interop](api-c.md#vulkan-interop): frames in and out through buffers you export, ordered by semaphores; the engine keeps its own device on the same GPU |
 | A `<video>`, canvas or `ImageBitmap` in a page or extension | the [JavaScript classes](api-js.md): `FhStream` and `FhPacer` over textures on the engine's `GPUDevice` (`engine.device()`); `examples/web/main.js` |
 | frames of a game or a capture, on their own display | the [Pacer](api-rust.md#pacer) in any of the three APIs: it says what to present on each tick and what to generate |
 

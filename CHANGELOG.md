@@ -5,6 +5,8 @@ follow semantic versioning as described in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-16
+
 ### Added
 
 - Frames from a host's own Vulkan device (Windows, Linux): `vulkan_interop` imports buffers and semaphores the host
