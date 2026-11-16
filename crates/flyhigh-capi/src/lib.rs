@@ -6,14 +6,17 @@
 //! - core.rs: `fh_engine_*` (the device), `fh_model_*`, `fh_session_*` (two frames in, one frame out)
 //! - stream.rs: `fh_stream_*` (frames with timestamps in, intervals out)
 //! - pacer.rs: `fh_pacer_*` (what to present on this tick, what to generate)
+//! - vulkan.rs: `fh_vk_*`, `fh_*_copy_in` / `fh_*_copy_out` (frames from the host's own Vulkan device)
 //! - here: `fh_generator_*`, the CPU convenience over `api::Generator`, and `fh_last_error`
 mod core;
 mod pacer;
 mod stream;
+mod vulkan;
 
 pub use core::*;
 pub use pacer::*;
 pub use stream::*;
+pub use vulkan::*;
 
 use flyhigh_engine::api::{Generator, Mode, Options, OutFrame};
 use flyhigh_engine::{Engine, Model};

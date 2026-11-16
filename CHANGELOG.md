@@ -5,6 +5,23 @@ follow semantic versioning as described in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-16
+
+### Added
+
+- Frames from a host's own Vulkan device (Windows, Linux): `vulkan_interop` imports buffers and semaphores the host
+  exports on the same GPU, `copy_in` copies a frame into an input slot after a semaphore wait and `copy_out` copies an
+  output slot back before a signal, with no copy through the CPU. C: `fh_engine_vulkan_interop`, `fh_vk_row_pitch`,
+  `fh_vk_buffer_import` / `_destroy`, `fh_vk_semaphore_import` / `_destroy`, `fh_vk_signal`, `fh_stream_copy_in` /
+  `fh_stream_copy_out`, `fh_session_copy_in` / `fh_session_copy_out`; C++ `fh::VkBuffer`, `fh::VkSemaphore`,
+  `Stream::copyIn` / `copyOut`. The engine's Vulkan device enables the external memory and semaphore extensions
+  whenever the adapter has them.
+
+### Fixed
+
+- `tools/build_web.sh` remaps source paths, so the browser module no longer carries the builder's home directory in
+  its panic locations.
+
 ## [0.3.7] - 2026-11-10
 
 ### Changed

@@ -20,6 +20,10 @@ libm.workspace = true
 half.workspace = true
 anyhow.workspace = true
 
+# vulkan_interop.rs: memory and semaphores of another Vulkan device (the version wgpu-hal uses)
+[target.'cfg(all(any(windows, target_os = "linux"), not(target_arch = "wasm32")))'.dependencies]
+ash = "0.38"
+
 # interop.rs: D3D11 shared textures into the Vulkan device (the handle type; the version wgpu-hal uses)
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_LibraryLoader"] }

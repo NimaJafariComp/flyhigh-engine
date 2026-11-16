@@ -5,7 +5,7 @@ is `include/flyhigh.h`. C++, C#, Python and other FFI hosts call the same functi
 layers are opaque handles: `FhEngine` (the device), `FhModel`, `FhSession` (two frames in, one frame at phase `t`
 out), `FhStream` (frames with timestamps in, intervals out), `FhPacer` (what to present on this tick, what to
 generate) and `FhGenerator` (the CPU convenience: source frames in, the frames to display out, in order). Frames cross
-the ABI as RGBA8 bytes (`width * height * 4`); GPU textures come in through the interop calls (`fh_session_import_d3d11`, `fh_stream_import_d3d11`). Single-threaded use per
+the ABI as RGBA8 bytes (`width * height * 4`); GPU frames come in through the interop calls (`fh_session_import_d3d11`, `fh_stream_import_d3d11`; [Vulkan interop](#vulkan-interop) from the host's own Vulkan device). Single-threaded use per
 handle; a failed call returns `NULL` or `-1` and `fh_last_error()` has the message. Options always start from the
 `fh_*_options_default()` struct. All options and defaults: [options.md](options.md).
 
@@ -73,6 +73,48 @@ times in host ms), `fh_stream_set_mouse_captured(st, 0 / 1)`, and at present tim
 `fh_stream_warp(st, engine, output, slot, out, now_ms)`: the frame you would present (input slot, or output slot
 with `output` 1) turned by the mouse motion since, into output slot `out`; 1 = present `out`, 0 = present the frame
 as it is ([integration guide](integration.md#input-latency-the-camera-warp)).
+
+## Vulkan interop
+
+For a host with its own Vulkan device (an emulator, a game, a capture on Vulkan) on Windows and Linux: frames cross
+on the GPU through memory and semaphores the host exports, with no copy through the CPU. The engine stays on its own
+device (its own queue, its tensor-core kernels); the two devices must be on the same GPU and driver.
+
+```c
+uint8_t uuid[16];
+if (fh_engine_vulkan_interop(engine, uuid) != 1) { /* the engine's device cannot import: another path */ }
+/* compare uuid with the host's VkPhysicalDeviceIDProperties::deviceUUID; pick the engine's GPU with the
+   adapter option ("10de:2803") when there are several */
+
+uint32_t pitch = fh_vk_row_pitch(width);                  /* bytes per row, a multiple of 256 */
+FhVkMemory m = { handle, allocation_size, memory_type_index };   /* the host's exported allocation */
+FhVkBuffer* in = fh_vk_buffer_import(engine, &m, (uint64_t)pitch * height);
+FhVkSemaphore* ready = fh_vk_semaphore_import(engine, ready_handle, 1);   /* 1 = timeline */
+
+/* host: copy the frame into the buffer (RGBA8 rows of pitch bytes), signal `ready` to v on its queue */
+fh_stream_copy_in(stream, engine, slot, in, pitch, ready, v);   /* the engine's copy waits for v */
+fh_stream_push(stream, engine, slot, pts, &push);
+fh_stream_generate(stream, engine, 0.5f, out);
+fh_stream_copy_out(stream, engine, out, out_buffer, pitch, done, w);   /* signals `done` to w after it */
+/* host: its copy out of out_buffer waits for `done` to reach w */
+```
+
+- The host allocates each buffer as a dedicated allocation (`VkMemoryDedicatedAllocateInfo`) for a buffer with
+  `TRANSFER_SRC | TRANSFER_DST` usage, exported as `OPAQUE_WIN32` (an NT handle) on Windows or `OPAQUE_FD` on Linux,
+  and passes its allocation size and memory type index: Vulkan requires the import to repeat them. Its device needs
+  `VK_KHR_external_memory_win32` / `_fd` and `VK_KHR_external_semaphore_win32` / `_fd`.
+- Buffers rather than images: an image's layout and compression belong to the device that made it; a buffer is the
+  same bytes on both. The copies cost about 0.05 ms per 1080p frame each.
+- A Windows handle stays the host's (close it after the import); a file descriptor belongs to the engine once the
+  import succeeds.
+- Semaphores: a timeline semaphore takes the value to wait for or signal (above 0), and the engine may wait before
+  the host has submitted the signal. A binary one takes 0, and its signal must be submitted before the engine's wait.
+  One semaphore per direction keeps each signalled by one queue only, so the values never have to be ordered across
+  the two queues.
+- `fh_vk_signal` signals with nothing copied. `fh_vk_semaphore_destroy` waits for the engine's queue first, so a
+  pending wait or signal never outlives the semaphore. `fh_session_copy_in` / `fh_session_copy_out` do the same for
+  a session's slots.
+- Rust: `vulkan_interop::{supported, device_uuid, import_buffer, import_semaphore, copy_in, copy_out, signal}`.
 
 ## Pacer (`fh_pacer_*`)
 
