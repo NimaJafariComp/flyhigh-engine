@@ -111,7 +111,7 @@ pub extern "C" fn fh_options_default(width: u32, height: u32) -> FhOptions {
         repair: o.repair,
         cadence: 0,
         render_sampling: 0,
-        keep_static: 0,
+        keep_static: 1,
         static_frames: o.static_frames,
         static_tolerance: o.static_tolerance,
         fast_render: 0,

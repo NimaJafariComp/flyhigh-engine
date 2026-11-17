@@ -327,7 +327,9 @@ def _session_options(width: int, height: int, internal=None, k: int = 1, repair:
     o.k = k
     o.repair = repair
     o.render = _RENDER[render]
-    if static_protection:
+    if static_protection is False:
+        o.keep_static = 0
+    elif static_protection:
         o.keep_static = 1
         if isinstance(static_protection, dict):
             o.static_frames = int(static_protection.get("frames", o.static_frames))
@@ -343,7 +345,7 @@ def _session_options(width: int, height: int, internal=None, k: int = 1, repair:
 
 class Session:
     """The plans of a model for one frame size: Session(engine, model, width, height, internal="auto"|"frame"|(w, h),
-    k=1, repair=1, render="model"|"bilinear"|"bicubic", static_protection=None|True|{"frames", "tolerance"},
+    k=1, repair=1, render="model"|"bilinear"|"bicubic", static_protection=None|True|False|{"frames", "tolerance"},
     fast_render=False, linear_t=False, keep_maps=False, protection_mask=False, tune=None)."""
 
     def __init__(self, engine: Engine, model: Model, width: int, height: int, **options):

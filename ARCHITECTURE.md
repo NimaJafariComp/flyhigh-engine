@@ -498,8 +498,8 @@ its 8 x 8 px flow grid:
   per-pixel choice between the frames was tried and read as patches.
 
 Both are measured with the local contrast an in-between keeps against the real frame, not PSNR or LPIPS, which reward
-the blend that reads as fog. Video mode keeps the plain render. `FH_STILL=0` and `FH_NEAR=0` turn them off for
-comparisons.
+the blend that reads as fog. Video mode keeps the plain render. The nearest-source regions are an option (`nearest_source`, off by default);
+`FH_STILL=0` turns the still test off for comparisons.
 
 ## Cadence (video mode)
 

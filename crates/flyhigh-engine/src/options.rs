@@ -236,11 +236,12 @@ pub struct NetOpts {
 pub fn decisive_default() -> bool {
     std::env::var("FH_BLEND").is_ok_and(|v| v.trim() == "decisive")
 }
-/// Nearest-source regions for hosts (Session, Stream realtime); FH_NEAR=0 turns them off for comparisons. On a flick the
-/// network cannot follow, the blend of two misplaced copies reads as fog: the nearer frame, warped, reads as a short
-/// hold.
+/// The default of `SessionOptions::nearest_source`: off, FH_NEAR=1 turns it on. On a flick
+/// the network cannot follow, the blend of two misplaced copies reads as fog and the nearer frame, warped, reads as a
+/// short hold; measured on captured 120 fps video (FlyHigh-Bench, UVG, 14 clips) the regions cost 0.53 dB and gain no
+/// sharpness, so they wait for a test that separates the flicks they help from the motion they hurt.
 pub fn near_default() -> bool {
-    std::env::var("FH_NEAR").map_or(true, |v| v.trim() != "0")
+    std::env::var("FH_NEAR").is_ok_and(|v| v.trim() == "1")
 }
 /// The still test for hosts (Session, Stream realtime); FH_STILL=0 turns it off for comparisons. The model's reference
 /// render (`NetOpts::new`, the parity fixtures) has none.
@@ -324,7 +325,10 @@ mod tests {
         }
         let session = &groups[1].options;
         assert_eq!(session.iter().find(|o| o.name == "k").map(|o| o.default.as_str()), Some("1"));
-        assert_eq!(session.iter().find(|o| o.name == "static_protection").map(|o| o.default.as_str()), Some("off"));
+        assert_eq!(
+            session.iter().find(|o| o.name == "static_protection").map(|o| o.default.as_str()),
+            Some("frames 8, tolerance 4")
+        );
     }
 
     #[test]

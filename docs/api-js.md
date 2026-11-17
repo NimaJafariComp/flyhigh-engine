@@ -43,7 +43,7 @@ console.log(engine.info(), model.info());                            // { name, 
 
 Session options: `{ width, height, internal: 'auto' | 'frame' | [w, h], k, repair, render: 'model' | 'bilinear' |
 'bicubic', staticProtection: false | true | { frames, tolerance }, fastRender, linearT, keepMaps, protectionMask,
-tune }`. Only `width` and `height` are required; the defaults are those of [options.md](options.md) (`internal` auto =
+nearestSource, tune }`. Only `width` and `height` are required; the defaults are those of [options.md](options.md) (`internal` auto =
 the 480-line rung above 960 px, `k` 1, `repair` 1).
 
 ## `FhSession`: two frames in, one frame out
@@ -132,7 +132,7 @@ and nothing the engine should know about ([ARCHITECTURE.md](../ARCHITECTURE.md))
 | `pacerDefaults()` | the Pacer options this browser needs: Firefox gets `min_present_interval_ms: 7` (its compositor stalls below that) |
 | `new ReadbackNudge(device).wrap(promise)` | Firefox resolves `mapAsync` only on GPU polls; empty submits while a readback is pending bring it from 70 to 100 ms down to 5. Wrap `classify`, `stats`, `cost`, `readRgba` |
 | `await warmUp(device, sessionOrStream)` | compiles every kernel and waits for the GPU before the first frame |
-| `new VideoSource(device, stream).write(slot, video)` | a `<video>` frame into an input slot: `pushVideo` where the browser takes it, an `importExternalTexture` render pass into the slot where it does not (Firefox) |
+| `new VideoSource(device, stream).write(slot, video)` | a `<video>` frame into an input slot: `pushVideo` where the browser takes it, an `importExternalTexture` render pass into the slot where it does not (Firefox), a 2D canvas copy where neither exists (Firefox 141 and 142, slow); `path` names the one in use: `copy`, `external`, `canvas` |
 | `new CanvasPresenter(device, canvas, stream).present(frame)` | the frame a tick names (`{ source }` or `{ output }`) onto the canvas |
 | `new TickSource(pacer, onTick).start()` | `requestAnimationFrame` as the Pacer's ticks; a tick later than 50 ms after the previous one is reported as a host stall |
 | `new CostSampler(pacer, nudge).push(stream, slot, pts)` / `.generate(stream, request, out)` | `push` and `generate` with a timed run every thirtieth call and on every probe, the GPU milliseconds fed to `costSample` |
