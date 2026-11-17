@@ -200,6 +200,8 @@ impl SessionOptions {
             decisive: crate::options::decisive_default(),
             still: crate::options::still_default(),
             near: self.nearest_source,
+            cascade: crate::options::cascade_default().0,
+            cascade_iters: crate::options::cascade_default().1,
         }
     }
 

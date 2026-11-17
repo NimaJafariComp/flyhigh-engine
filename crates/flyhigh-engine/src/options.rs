@@ -230,6 +230,25 @@ pub struct NetOpts {
     pub still: bool,
     /// nearest-source regions after the render: where the warped frames disagree over a region, the nearer frame alone
     pub near: bool,
+    /// pyramid levels of the pair stage (`model::graph::cascade`); 0 or 1 = the plain graph
+    pub cascade: u32,
+    /// fine iterations at each cascade level above the coarsest, coarse to fine
+    pub cascade_iters: [u32; 3],
+}
+/// Cascade levels for comparisons: FH_CASCADE=<levels>, FH_CASCADE_K=<fine iterations per level, coarse to fine,
+/// comma separated> (default 2).
+pub fn cascade_default() -> (u32, [u32; 3]) {
+    let levels = std::env::var("FH_CASCADE").ok().and_then(|v| v.trim().parse::<u32>().ok()).unwrap_or(0);
+    let given: Vec<u32> = std::env::var("FH_CASCADE_K")
+        .map(|v| v.split(',').filter_map(|x| x.trim().parse().ok()).collect())
+        .unwrap_or_default();
+    let mut iters = [2; 3];
+    for (i, slot) in iters.iter_mut().enumerate() {
+        if let Some(&v) = given.get(i).or(given.last()) {
+            *slot = v;
+        }
+    }
+    (levels, iters)
 }
 /// The decisive blend: off by default (on screen its patches at a failed motion were no better than the blend's
 /// fog); FH_BLEND=decisive turns it on for comparisons.
@@ -270,6 +289,8 @@ impl NetOpts {
             decisive: false,
             still: false,
             near: false,
+            cascade: cascade_default().0,
+            cascade_iters: cascade_default().1,
         }
     }
     /// The render's mode word (render.wgsl / render_tex.wgsl): bit 0 decisive blend, bit 1 still test, bit 2

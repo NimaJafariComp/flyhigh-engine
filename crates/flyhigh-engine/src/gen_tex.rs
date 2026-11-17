@@ -215,6 +215,8 @@ impl GenTex {
             decisive: crate::options::decisive_default() && opts.mode == TexMode::Realtime,
             still: crate::options::still_default() && opts.mode == TexMode::Realtime,
             near: opts.near && opts.mode == TexMode::Realtime,
+            cascade: crate::options::cascade_default().0,
+            cascade_iters: crate::options::cascade_default().1,
         };
         let mut sess = Vec::new();
         for _ in 0..n_sess {

@@ -172,7 +172,7 @@ pub fn build(ops: &[Value], env: &mut HashMap<String, Tensor>, plan: &mut Vec<St
         let (res, steps): OpOutput = match name {
             "repeat" => {
                 let body: Vec<Value> = op["body"].as_array().unwrap().clone();
-                for _ in 0..cx.k {
+                for _ in 0..crate::model::graph::repeat_times(op, cx.k) {
                     build(&body, env, plan, cx);
                 }
                 continue;
@@ -507,6 +507,13 @@ pub fn build_network_ex(
     let (hp, wp) = (a.h, a.w);
     let (ihp, iwp) = (ih.div_ceil(32) * 32, iw.div_ceil(32) * 32);
     let internal = (iwp, ihp) != (wp, hp);
+    // cascade: as many of the requested levels as the network size divides into (the coarsest level needs /16)
+    let mut levels = if net.fast_render { 1 } else { net.cascade.max(1) };
+    while levels > 1 && (ihp % (16 << (levels - 1)) != 0 || iwp % (16 << (levels - 1)) != 0) {
+        levels -= 1;
+    }
+    let cascaded = (levels > 1).then(|| crate::model::graph::cascade(ops, levels, &net.cascade_iters)).flatten();
+    let ops: &[Value] = cascaded.as_deref().unwrap_or(ops);
     let arena_was = if std::env::var_os("FH_NO_ARENA").is_some() {
         gpu.arena.borrow_mut().take()
     } else {
