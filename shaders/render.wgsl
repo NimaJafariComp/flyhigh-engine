@@ -14,6 +14,8 @@ enable f16;
 // world (HUD text, a crosshair) is explained far better by staying, but the flow lives on an 8 x 8 px grid and drags
 // it along with the world; where staying wins the in-between keeps the still pixels. Only nearly identical pixels
 // count as still (0.03 of the range), so a world the network got wrong is not frozen into a blend of two frames.
+// unchanged pairs before the still test (static variant) believes a pixel stayed
+const STILL_RUN: f32 = 3.0;
 struct Par { H: u32, W: u32, hq: u32, wq: u32, f0: u32, v0: u32, fsx: f32, fsy: f32, vs: f32, cubic: u32, min_age: u32, decisive: u32 };   // flow_tq / vis_tq may be views; fsx/fsy: flow scale per axis
 @group(0) @binding(0) var<storage, read> A: array<f16>;
 @group(0) @binding(1) var<storage, read> B: array<f16>;

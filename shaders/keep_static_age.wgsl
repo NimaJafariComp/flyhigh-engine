@@ -22,12 +22,17 @@ const FAR = array<i32, 4>(4, 8, 16, 32);
 const VERIFIED: f32 = 2.0;
 // a pixel flat in both frames is no evidence of standing still (see keep_static_age_tex.wgsl)
 const FLAT: f32 = 0.03;
-fn decide(o: u32, plane: u32, still: bool, moved: bool) -> f16 {
+// `same`: the pixel did not change in this pair, flat or not. Its run length goes out negated where the pixel is not
+// protected: the render's still test trusts "this pixel stayed" only after it stayed for several pairs, because one
+// pair cannot tell an overlay from a moving flat detail that covers the same place in both frames.
+fn decide(o: u32, plane: u32, still: bool, moved: bool, same: bool) -> f16 {
     let raw = select(0.0, min(f32(state[o]) + 1.0, 255.0), still);
     let seen = select(0.0, min(f32(state[plane + o]) + select(0.0, 1.0, moved), 255.0), still);
+    let run = select(0.0, min(f32(state[2u * plane + o]) + 1.0, 255.0), same);
     state[o] = f16(raw);
     state[plane + o] = f16(seen);
-    return f16(select(0.0, raw, seen >= VERIFIED));
+    state[2u * plane + o] = f16(run);
+    return f16(select(-run, raw, seen >= VERIFIED));
 }
 
 fn spread(x: u32, y: u32, plane: u32) -> f32 {
@@ -66,6 +71,7 @@ fn age(@builtin(global_invocation_id) gid: vec3<u32>) {
         let xx = u32(clamp(q.x, 0, i32(p.w) - 1)); let yy = u32(clamp(q.y, 0, i32(p.h) - 1));
         moved = moved || diff(yy * p.wp + xx, plane) >= p.thr;
     } }
-    let aged = decide(o, plane, diff(o, plane) < p.thr && spread(gid.x, gid.y, plane) >= FLAT, moved);
+    let same = diff(o, plane) < p.thr;
+    let aged = decide(o, plane, same && spread(gid.x, gid.y, plane) >= FLAT, moved, same);
     outp[o] = select(aged, f16(255.0), p.use_mask != 0u && f32(mask[o]) > 0.5);
 }
