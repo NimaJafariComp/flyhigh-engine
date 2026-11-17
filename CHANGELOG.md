@@ -5,6 +5,26 @@ follow semantic versioning as described in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-17
+
+### Changed
+
+- Static protection is on by default (frames 8, tolerance 4) in every API: `SessionOptions`, `Options`, the C
+  defaults and the browser module, where `staticProtection: false` turns it off. A still overlay over a moving world
+  (HUD text, a crosshair, a bar) was painted over by the world the flow brought from both sides: the opaque overlay of
+  a synthetic 1080p HUD clip scored 14 to 16 dB and scores 24.5 to 29.5 dB once the protection has its history.
+  Captured 120 fps video without overlays (UVG, 14 clips) is unchanged (-0.00 dB).
+- Nearest-source regions are off by default and became an option: `SessionOptions::nearest_source`, `nearestSource`
+  in the browser module, `FH_NEAR=1` in the environment for the C API. On the same 14 clips they cost 0.53 dB and
+  gained no sharpness (0.772 against 0.775 of the ground truth's local contrast); on ground-truth triplets the
+  realtime defaults now score ATD 31.66, CS2 29.32, natural 38.18 dB (0.3.7: 30.62, 28.83, 37.32).
+
+### Fixed
+
+- `VideoSource` (browser adapters) works in a browser without `importExternalTexture` (Firefox 141 and 142): the
+  frame goes through a 2D canvas there instead of failing with "importExternalTexture is not a function". That path
+  costs a CPU copy per frame; `VideoSource.path` tells a host which one is in use (`copy`, `external`, `canvas`).
+
 ## [0.4.0] - 2026-11-16
 
 ### Added

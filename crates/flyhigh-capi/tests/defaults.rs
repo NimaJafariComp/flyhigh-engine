@@ -16,7 +16,7 @@ fn options_default_matches_rust() {
         (c.width, c.height, c.k, c.internal_w, c.internal_h, c.mode, c.repair, c.cadence, c.render_sampling),
         (1920, 1080, 1, 856, 480, 0, DEFAULT_REPAIR, 0, 0)
     );
-    assert_eq!((c.keep_static, c.fast_render, c.linear_t), (0, 0, 0));
+    assert_eq!((c.keep_static, c.fast_render, c.linear_t), (1, 0, 0));
     let s = fh_options_default(640, 480);
     assert_eq!((s.internal_w, s.internal_h), (0, 0)); // 0, 0 = the frame size
 }

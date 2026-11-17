@@ -18,7 +18,7 @@ fn generator_defaults() {
     let o = Options::new(1920, 1080);
     assert_eq!((o.k, o.repair, o.mode, o.cadence, o.cubic), (1, DEFAULT_REPAIR, Mode::Realtime, false, None));
     assert_eq!(o.internal, Some((856, 480)));
-    assert!(!o.keep_static && !o.tex_options().keep_static && !TexOptions::new(64, 64).keep_static);
+    assert!(o.keep_static && o.tex_options().keep_static && TexOptions::new(64, 64).keep_static);
     assert_eq!(Options::new(800, 600).internal, None);
     let t = o.tex_options();
     assert_eq!((t.w, t.h, t.iw, t.ih, t.k, t.repair), (1920, 1080, 856, 480, 1, 1));

@@ -62,6 +62,8 @@ pub struct TexOptions {
     pub fast_render: bool,
     pub linear_t: bool,
     pub protection_mask: bool,
+    /// nearest-source regions (`NetOpts::near`, realtime mode)
+    pub near: bool,
 }
 impl TexOptions {
     /// defaults: k 1, internal size `default_internal`, realtime, repair `DEFAULT_REPAIR`, no cadence, model sampler, no static protection
@@ -77,12 +79,13 @@ impl TexOptions {
             repair: crate::DEFAULT_REPAIR,
             cadence: false,
             cubic: None,
-            keep_static: false,
+            keep_static: true,
             static_frames: crate::DEFAULT_STATIC_FRAMES,
             static_tolerance: crate::DEFAULT_STATIC_TOLERANCE,
             fast_render: false,
             linear_t: false,
             protection_mask: false,
+            near: crate::options::near_default(),
         }
     }
 }
@@ -211,7 +214,7 @@ impl GenTex {
             // games (realtime); video and anime keep the soft blend until it is measured there
             decisive: crate::options::decisive_default() && opts.mode == TexMode::Realtime,
             still: crate::options::still_default() && opts.mode == TexMode::Realtime,
-            near: crate::options::near_default() && opts.mode == TexMode::Realtime,
+            near: opts.near && opts.mode == TexMode::Realtime,
         };
         let mut sess = Vec::new();
         for _ in 0..n_sess {

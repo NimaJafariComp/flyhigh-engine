@@ -114,6 +114,12 @@ pub struct SessionOptions {
     /// Works with or without `static_protection`; a rewritten mask applies from the next pair.
     #[option(values = "on, off", c = "protection_mask (0, 1)")]
     pub protection_mask: bool,
+    /// Where the two warped frames disagree over a whole region (a flick the network could not follow), the
+    /// in-between takes the nearer source frame alone there: a short hold instead of the fog of two misplaced
+    /// copies. Off by default: on captured 120 fps video it costs 0.53 dB and gains no sharpness; a host whose
+    /// viewers prefer the hold on fast turns turns it on. The environment variable `FH_NEAR=1` sets the default to on.
+    #[option(default = "off", values = "on, off", c = "none (FH_NEAR=1 in the environment)")]
+    pub nearest_source: bool,
     /// Kernel choices from an earlier autotune on this device at this size (the text of a `TuneTable`); without one
     /// the engine tunes at the first build, or uses the fixed routing when the autotune is off.
     #[option(default = "none", values = "an autotune table", c = "tune (text, NULL = none)")]
@@ -129,11 +135,12 @@ impl SessionOptions {
             k: 1,
             repair: crate::DEFAULT_REPAIR,
             render: RenderSampling::Model,
-            static_protection: None,
+            static_protection: Some(StaticProtection::default()),
             fast_render: false,
             linear_t: false,
             keep_maps: false,
             protection_mask: false,
+            nearest_source: crate::options::near_default(),
             tune: None,
         }
     }
@@ -192,7 +199,7 @@ impl SessionOptions {
             protection_mask: self.protection_mask,
             decisive: crate::options::decisive_default(),
             still: crate::options::still_default(),
-            near: crate::options::near_default(),
+            near: self.nearest_source,
         }
     }
 
@@ -220,6 +227,7 @@ impl SessionOptions {
             fast_render: self.fast_render,
             linear_t: self.linear_t,
             protection_mask: self.protection_mask,
+            near: self.nearest_source,
         }
     }
 }

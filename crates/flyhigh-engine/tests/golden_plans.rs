@@ -81,6 +81,7 @@ fn dump_video(e: &Engine) -> String {
     let mut o = TexOptions::new(1280, 720);
     o.mode = TexMode::Video;
     o.cadence = true;
+    o.keep_static = false;
     let g = GenTex::new(&e.gpu, &e.blob, &e.ops, o, None).expect("video session");
     let d = |s: &SessionExt| format!("# pair\n{}# mid\n{}", plan_dump(&s.plan_pair), plan_dump(&s.plan_mid));
     assert_eq!(g.sess.len(), 3);

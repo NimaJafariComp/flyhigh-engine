@@ -94,7 +94,7 @@ pub struct Options {
     /// render source sampler: None = the model's (manifest), Some(true) bicubic, Some(false) bilinear
     pub cubic: Option<bool>,
     /// static protection: pixels equal in both source frames (HUD, burnt-in subtitles, logos) are kept as they are
-    /// instead of being warped with the motion behind them (default off)
+    /// instead of being warped with the motion behind them (default on)
     pub keep_static: bool,
     /// static protection: unchanged source frames before a pixel is protected (default 8)
     pub static_frames: u32,
@@ -121,7 +121,7 @@ impl Options {
             repair: DEFAULT_REPAIR,
             cadence: false,
             cubic: None,
-            keep_static: false,
+            keep_static: true,
             static_frames: crate::DEFAULT_STATIC_FRAMES,
             static_tolerance: crate::DEFAULT_STATIC_TOLERANCE,
             fast_render: false,
@@ -147,6 +147,7 @@ impl Options {
             fast_render: self.fast_render,
             linear_t: self.linear_t,
             protection_mask: false,
+            near: crate::options::near_default(),
         }
     }
 }

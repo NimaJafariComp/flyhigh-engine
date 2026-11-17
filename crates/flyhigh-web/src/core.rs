@@ -153,7 +153,8 @@ impl EngineOptionsJs {
 }
 
 /// `{ width, height, internal: 'auto' | 'frame' | [w, h], k, repair, render: 'model' | 'bilinear' | 'bicubic',
-///    staticProtection: false | true | { frames, tolerance }, fastRender, linearT, keepMaps, protectionMask, tune }`.
+///    staticProtection: false | true | { frames, tolerance }, fastRender, linearT, keepMaps, protectionMask,
+///    nearestSource, tune }`.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct SessionOptionsJs {
@@ -177,6 +178,8 @@ struct SessionOptionsJs {
     keep_maps: Option<bool>,
     #[serde(default)]
     protection_mask: Option<bool>,
+    #[serde(default)]
+    nearest_source: Option<bool>,
     #[serde(default)]
     tune: Option<String>,
 }
@@ -206,8 +209,10 @@ impl SessionOptionsJs {
             Some(r) => return Err(JsValue::from_str(&format!("render '{r}' is not model, bilinear or bicubic"))),
         };
         o.static_protection = match self.static_protection {
-            None | Some(serde_json::Value::Null) | Some(serde_json::Value::Bool(false)) => None,
-            Some(serde_json::Value::Bool(true)) => Some(StaticProtection::default()),
+            Some(serde_json::Value::Bool(false)) => None,
+            None | Some(serde_json::Value::Null) | Some(serde_json::Value::Bool(true)) => {
+                Some(StaticProtection::default())
+            }
             Some(serde_json::Value::Object(m)) => {
                 let d = StaticProtection::default();
                 Some(StaticProtection {
@@ -227,6 +232,7 @@ impl SessionOptionsJs {
         o.linear_t = self.linear_t.unwrap_or(false);
         o.keep_maps = self.keep_maps.unwrap_or(false);
         o.protection_mask = self.protection_mask.unwrap_or(false);
+        o.nearest_source = self.nearest_source.unwrap_or(false);
         o.tune = self.tune.as_deref().filter(|t| !t.is_empty()).and_then(flyhigh_engine::tune_table_from);
         o.validate().map_err(err)?;
         Ok(o)
