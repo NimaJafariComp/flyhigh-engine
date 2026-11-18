@@ -14,6 +14,17 @@ fn internal_size_is_the_480_line_rung_above_960_px() {
 }
 
 #[test]
+fn precise_motion_takes_the_800_line_rung_above_960_px() {
+    use flyhigh_engine::options::{precise_applies, precise_internal};
+    assert_eq!(precise_internal(1920, 1080), (1408, 800));
+    assert_eq!(precise_internal(2560, 1440), (1408, 800));
+    assert_eq!(precise_internal(3840, 2160), (1408, 800));
+    assert_eq!(precise_internal(1600, 900), (1408, 800));
+    assert_eq!(precise_internal(1280, 720), (1280, 720)); // not applied: the frame itself
+    assert!(!precise_applies(1280, 720) && precise_applies(1600, 900));
+}
+
+#[test]
 fn generator_defaults() {
     let o = Options::new(1920, 1080);
     assert_eq!((o.k, o.repair, o.mode, o.cadence, o.cubic), (1, DEFAULT_REPAIR, Mode::Realtime, false, None));

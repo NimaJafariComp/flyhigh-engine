@@ -120,6 +120,13 @@ pub struct SessionOptions {
     /// viewers prefer the hold on fast turns turns it on. The environment variable `FH_NEAR=1` sets the default to on.
     #[option(default = "off", values = "on, off", c = "none (FH_NEAR=1 in the environment)")]
     pub nearest_source: bool,
+    /// Frames above 1280 px on the long side: the motion is found on a 400-line picture and refined on an 800-line one (`internal`
+    /// `Auto` picks that size), instead of one pass at 480 lines. On captured 1080p 120 fps video (UVG, 14 clips)
+    /// 33.83 against 33.42 dB and LPIPS 0.159 against 0.165; on synthetic 1080p pans and moving objects 35.41
+    /// against 33.35 dB. Costs GPU time: 1.94 against 1.06 ms per generated frame at 1080p on an RTX 5090. No effect
+    /// on smaller frames or with `fast_render`. The environment variable `FH_PRECISE=1` sets the default to on.
+    #[option(default = "off", values = "on, off", c = "none (FH_PRECISE=1 in the environment)")]
+    pub precise_motion: bool,
     /// Kernel choices from an earlier autotune on this device at this size (the text of a `TuneTable`); without one
     /// the engine tunes at the first build, or uses the fixed routing when the autotune is off.
     #[option(default = "none", values = "an autotune table", c = "tune (text, NULL = none)")]
@@ -141,12 +148,19 @@ impl SessionOptions {
             keep_maps: false,
             protection_mask: false,
             nearest_source: crate::options::near_default(),
+            precise_motion: crate::options::precise_default(),
             tune: None,
         }
     }
 
+    /// precise motion is in effect for these options (`precise_motion` on a frame above 1280 px, exact render)
+    pub fn precise(&self) -> bool {
+        self.precise_motion && !self.fast_render && crate::options::precise_applies(self.width, self.height)
+    }
+
     pub fn internal_size(&self) -> (u32, u32) {
         match self.internal {
+            Internal::Auto if self.precise() => crate::options::precise_internal(self.width, self.height),
             Internal::Auto => crate::default_internal(self.width, self.height),
             Internal::Frame => (self.width, self.height),
             Internal::Size(w, h) => (w.min(self.width), h.min(self.height)),
@@ -200,6 +214,8 @@ impl SessionOptions {
             decisive: crate::options::decisive_default(),
             still: crate::options::still_default(),
             near: self.nearest_source,
+            cascade: crate::options::cascade_for(self.precise()).0,
+            cascade_iters: crate::options::cascade_for(self.precise()).1,
         }
     }
 
@@ -228,6 +244,7 @@ impl SessionOptions {
             linear_t: self.linear_t,
             protection_mask: self.protection_mask,
             near: self.nearest_source,
+            precise: self.precise(),
         }
     }
 }

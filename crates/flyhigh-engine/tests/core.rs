@@ -17,6 +17,13 @@ fn session_options_validate() {
     assert!(o.validate().is_ok());
     assert_eq!(o.internal_size(), (856, 480), "the 480-line rung above 960 px");
     assert_eq!(SessionOptions::new(640, 480).internal_size(), (640, 480));
+    let precise = SessionOptions { precise_motion: true, ..SessionOptions::new(1920, 1080) };
+    assert!(precise.precise());
+    assert_eq!(precise.internal_size(), (1408, 800), "precise motion refines on the 800-line rung");
+    let precise_fast = SessionOptions { fast_render: true, ..precise.clone() };
+    assert!(!precise_fast.precise());
+    assert_eq!(precise_fast.internal_size(), (856, 480));
+    assert!(!SessionOptions { precise_motion: true, ..SessionOptions::new(960, 540) }.precise());
     let small = SessionOptions::new(32, 32);
     assert_eq!(small.validate().unwrap_err().field, "width");
     let k = SessionOptions { k: 4, ..SessionOptions::new(W, H) };

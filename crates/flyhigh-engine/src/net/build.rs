@@ -172,7 +172,7 @@ pub fn build(ops: &[Value], env: &mut HashMap<String, Tensor>, plan: &mut Vec<St
         let (res, steps): OpOutput = match name {
             "repeat" => {
                 let body: Vec<Value> = op["body"].as_array().unwrap().clone();
-                for _ in 0..cx.k {
+                for _ in 0..crate::model::graph::repeat_times(op, cx.k) {
                     build(&body, env, plan, cx);
                 }
                 continue;
@@ -507,6 +507,13 @@ pub fn build_network_ex(
     let (hp, wp) = (a.h, a.w);
     let (ihp, iwp) = (ih.div_ceil(32) * 32, iw.div_ceil(32) * 32);
     let internal = (iwp, ihp) != (wp, hp);
+    // cascade: as many of the requested levels as the network size divides into (the coarsest level needs /16)
+    let mut levels = if net.fast_render { 1 } else { net.cascade.max(1) };
+    while levels > 1 && (ihp % (16 << (levels - 1)) != 0 || iwp % (16 << (levels - 1)) != 0) {
+        levels -= 1;
+    }
+    let cascaded = (levels > 1).then(|| crate::model::graph::cascade(ops, levels, &net.cascade_iters)).flatten();
+    let ops: &[Value] = cascaded.as_deref().unwrap_or(ops);
     let arena_was = if std::env::var_os("FH_NO_ARENA").is_some() {
         gpu.arena.borrow_mut().take()
     } else {
@@ -530,9 +537,9 @@ pub fn build_network_ex(
     let static_p = StaticParams::new(net, wp, hp, wp, hp);
     let static_age = net.protects().then(|| gpu.buf(&vec![0.0; (wp * hp) as usize]));
     // the age pass's own counters (keep_static_age.wgsl): unchanged pairs, and those with the surroundings moving
-    let static_state = static_age.as_ref().map(|_| gpu.buf(&vec![0.0; (2 * wp * hp) as usize]));
+    let static_state = static_age.as_ref().map(|_| gpu.buf(&vec![0.0; (3 * wp * hp) as usize]));
     if let Some(st) = &static_state {
-        env.insert("static:state".into(), Tensor { buf: st.clone(), c: 2, h: hp, w: wp, c0: 0, scale: 1.0 });
+        env.insert("static:state".into(), Tensor { buf: st.clone(), c: 3, h: hp, w: wp, c0: 0, scale: 1.0 });
     }
     // the host's mask (`SessionExt::write_mask`); the zero buffer fills the binding when the session has none
     let mask = net.protection_mask.then(|| gpu.buf(&vec![0.0; (wp * hp) as usize]));

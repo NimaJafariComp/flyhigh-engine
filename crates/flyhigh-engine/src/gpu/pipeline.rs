@@ -20,6 +20,7 @@ fn on_static(gx: f32, gy: f32) -> bool {\n\
     let hook = "    // static hook\n";
     let rule = "    let sa = on_static(gxa, gya); let sb = on_static(gxb, gyb);\n\
     var raw = 0.0;\n\
+    stillw = stillw * select(0.0, 1.0, abs(f32(age[y * pp.W + x])) >= STILL_RUN);\n\
     if (sa && sb) { rk = 0.0; raw = 1.0; } else if (sa) { rk = 0.0; bwa = 0.0; bwb = 1.0; } else if (sb) { rk = 0.0; bwa = 1.0; bwb = 0.0; }\n";
     let out_old = "        outp[(c * pp.H + y) * pp.W + x] = f16(o[c]);";
     let out_new = "        let i = (c * pp.H + y) * pp.W + x;\n\

@@ -154,7 +154,7 @@ impl EngineOptionsJs {
 
 /// `{ width, height, internal: 'auto' | 'frame' | [w, h], k, repair, render: 'model' | 'bilinear' | 'bicubic',
 ///    staticProtection: false | true | { frames, tolerance }, fastRender, linearT, keepMaps, protectionMask,
-///    nearestSource, tune }`.
+///    nearestSource, preciseMotion, tune }`.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct SessionOptionsJs {
@@ -180,6 +180,8 @@ struct SessionOptionsJs {
     protection_mask: Option<bool>,
     #[serde(default)]
     nearest_source: Option<bool>,
+    #[serde(default)]
+    precise_motion: Option<bool>,
     #[serde(default)]
     tune: Option<String>,
 }
@@ -233,6 +235,7 @@ impl SessionOptionsJs {
         o.keep_maps = self.keep_maps.unwrap_or(false);
         o.protection_mask = self.protection_mask.unwrap_or(false);
         o.nearest_source = self.nearest_source.unwrap_or(false);
+        o.precise_motion = self.precise_motion.unwrap_or(false);
         o.tune = self.tune.as_deref().filter(|t| !t.is_empty()).and_then(flyhigh_engine::tune_table_from);
         o.validate().map_err(err)?;
         Ok(o)

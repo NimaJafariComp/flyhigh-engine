@@ -26,12 +26,17 @@ const VERIFIED: f32 = 2.0;
 // is fill in both, so protecting it erased the in-between's line there (a dotted, broken outline on anime pans). An
 // overlay has an edge of its own (a crosshair line, text, a panel's border); a flat panel inside needs no protection.
 const FLAT: f32 = 0.03;
-fn decide(o: u32, plane: u32, still: bool, moved: bool) -> f16 {
+// `same`: the pixel did not change in this pair, flat or not. Its run length goes out negated where the pixel is not
+// protected: the render's still test trusts "this pixel stayed" only after it stayed for several pairs, because one
+// pair cannot tell an overlay from a moving flat detail that covers the same place in both frames.
+fn decide(o: u32, plane: u32, still: bool, moved: bool, same: bool) -> f16 {
     let raw = select(0.0, min(f32(state[o]) + 1.0, 255.0), still);
     let seen = select(0.0, min(f32(state[plane + o]) + select(0.0, 1.0, moved), 255.0), still);
+    let run = select(0.0, min(f32(state[2u * plane + o]) + 1.0, 255.0), same);
     state[o] = f16(raw);
     state[plane + o] = f16(seen);
-    return f16(select(0.0, raw, seen >= VERIFIED));
+    state[2u * plane + o] = f16(run);
+    return f16(select(-run, raw, seen >= VERIFIED));
 }
 fn spread(t: vec2<i32>, hi: vec2<i32>) -> f32 {
     let ca = textureLoad(tex_a, t, 0).rgb;
@@ -63,6 +68,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         moved = moved || change(clamp(t + DIRS[i] * FAR[j], vec2<i32>(0), hi)) >= p.thr;
     } }
     let o = gid.y * p.wp + gid.x;
-    let aged = decide(o, p.hp * p.wp, change(t) < p.thr && spread(t, hi) >= FLAT, moved);
+    let same = change(t) < p.thr;
+    let aged = decide(o, p.hp * p.wp, same && spread(t, hi) >= FLAT, moved, same);
     outp[o] = select(aged, f16(255.0), p.use_mask != 0u && f32(mask[o]) > 0.5);
 }
