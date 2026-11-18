@@ -235,8 +235,37 @@ pub struct NetOpts {
     /// fine iterations at each cascade level above the coarsest, coarse to fine
     pub cascade_iters: [u32; 3],
 }
-/// Cascade levels for comparisons: FH_CASCADE=<levels>, FH_CASCADE_K=<fine iterations per level, coarse to fine,
-/// comma separated> (default 2).
+/// The default of `SessionOptions::precise_motion`: off, FH_PRECISE=1 turns it on.
+pub fn precise_default() -> bool {
+    std::env::var("FH_PRECISE").is_ok_and(|v| v.trim() == "1")
+}
+/// Whether precise motion applies to a frame: above 1280 px on the long side only, where its 800-line rung is
+/// smaller than the frame. Measured at 1080p; smaller frames keep the plain pair stage.
+pub fn precise_applies(w: u32, h: u32) -> bool {
+    w.max(h) > 1280
+}
+/// The internal size of precise motion when the host gives none: the 800-line rung (aspect kept, multiples of 32),
+/// never above the frame. Half of it is the level the motion is found on, so the search range stays that of the
+/// 400-line picture while the result is refined on the 800-line one.
+pub fn precise_internal(w: u32, h: u32) -> (u32, u32) {
+    if !precise_applies(w, h) {
+        return (w, h);
+    }
+    let s = (800.0 / h as f64).min(1.0);
+    let rw = ((w as f64 * s / 32.0).round() as u32 * 32).max(64);
+    let rh = ((h as f64 * s / 32.0).round() as u32 * 32).max(64);
+    (rw.min(w), rh.min(h))
+}
+/// Pyramid levels and fine iterations of the pair stage: two levels with two iterations for precise motion, else the
+/// plain graph. FH_CASCADE=<levels> and FH_CASCADE_K=<fine iterations per level, coarse to fine, comma separated>
+/// override both for comparisons.
+pub fn cascade_for(precise: bool) -> (u32, [u32; 3]) {
+    match std::env::var_os("FH_CASCADE") {
+        Some(_) => cascade_default(),
+        None => (if precise { 2 } else { 0 }, [2; 3]),
+    }
+}
+/// The comparison override of `cascade_for`.
 pub fn cascade_default() -> (u32, [u32; 3]) {
     let levels = std::env::var("FH_CASCADE").ok().and_then(|v| v.trim().parse::<u32>().ok()).unwrap_or(0);
     let given: Vec<u32> = std::env::var("FH_CASCADE_K")
@@ -289,8 +318,8 @@ impl NetOpts {
             decisive: false,
             still: false,
             near: false,
-            cascade: cascade_default().0,
-            cascade_iters: cascade_default().1,
+            cascade: cascade_for(false).0,
+            cascade_iters: cascade_for(false).1,
         }
     }
     /// The render's mode word (render.wgsl / render_tex.wgsl): bit 0 decisive blend, bit 1 still test, bit 2

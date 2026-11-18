@@ -64,11 +64,14 @@ pub struct TexOptions {
     pub protection_mask: bool,
     /// nearest-source regions (`NetOpts::near`, realtime mode)
     pub near: bool,
+    /// precise motion (`SessionOptions::precise_motion`): the two-level pair stage; `iw` x `ih` is its fine level
+    pub precise: bool,
 }
 impl TexOptions {
     /// defaults: k 1, internal size `default_internal`, realtime, repair `DEFAULT_REPAIR`, no cadence, model sampler, no static protection
     pub fn new(w: u32, h: u32) -> TexOptions {
-        let (iw, ih) = crate::default_internal(w, h);
+        let precise = crate::options::precise_default() && crate::options::precise_applies(w, h);
+        let (iw, ih) = if precise { crate::options::precise_internal(w, h) } else { crate::default_internal(w, h) };
         TexOptions {
             w,
             h,
@@ -86,6 +89,7 @@ impl TexOptions {
             linear_t: false,
             protection_mask: false,
             near: crate::options::near_default(),
+            precise,
         }
     }
 }
@@ -193,6 +197,15 @@ impl GenTex {
         opts: TexOptions,
         tune: Option<&crate::TuneTable>,
     ) -> Result<GenTex> {
+        // fast render has no cascade: precise motion set by the environment default falls back to the plain rung
+        let mut opts = opts;
+        opts.precise &= crate::options::precise_applies(opts.w, opts.h);
+        if opts.precise && opts.fast_render {
+            opts.precise = false;
+            if (opts.iw, opts.ih) == crate::options::precise_internal(opts.w, opts.h) {
+                (opts.iw, opts.ih) = crate::default_internal(opts.w, opts.h);
+            }
+        }
         anyhow::ensure!((1..=3).contains(&opts.k), "k must be 1..3");
         anyhow::ensure!(opts.repair <= 2, "repair must be 0..2");
         anyhow::ensure!(opts.w >= 64 && opts.h >= 64, "frame size too small (min 64 x 64)");
@@ -215,8 +228,8 @@ impl GenTex {
             decisive: crate::options::decisive_default() && opts.mode == TexMode::Realtime,
             still: crate::options::still_default() && opts.mode == TexMode::Realtime,
             near: opts.near && opts.mode == TexMode::Realtime,
-            cascade: crate::options::cascade_default().0,
-            cascade_iters: crate::options::cascade_default().1,
+            cascade: crate::options::cascade_for(opts.precise).0,
+            cascade_iters: crate::options::cascade_for(opts.precise).1,
         };
         let mut sess = Vec::new();
         for _ in 0..n_sess {

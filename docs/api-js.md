@@ -43,7 +43,7 @@ console.log(engine.info(), model.info());                            // { name, 
 
 Session options: `{ width, height, internal: 'auto' | 'frame' | [w, h], k, repair, render: 'model' | 'bilinear' |
 'bicubic', staticProtection: false | true | { frames, tolerance }, fastRender, linearT, keepMaps, protectionMask,
-nearestSource, tune }`. Only `width` and `height` are required; the defaults are those of [options.md](options.md) (`internal` auto =
+nearestSource, preciseMotion, tune }`. Only `width` and `height` are required; the defaults are those of [options.md](options.md) (`internal` auto =
 the 480-line rung above 960 px, `k` 1, `repair` 1).
 
 ## `FhSession`: two frames in, one frame out

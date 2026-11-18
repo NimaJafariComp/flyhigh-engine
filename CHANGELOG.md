@@ -5,6 +5,28 @@ follow semantic versioning as described in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-18
+
+### Added
+
+- Precise motion for large frames: `SessionOptions::precise_motion`, `preciseMotion` in the browser module,
+  `FH_PRECISE=1` in the environment for the C API. Off by default. On frames above 1280 px on the long side the pair
+  stage finds the motion on a 400-line picture and refines it on an 800-line one (`internal` auto picks 1408 x 800 for
+  1080p) instead of one pass at 480 lines, with the same weights. Captured 1080p 120 fps video (UVG, 14 clips): 33.83
+  against 33.42 dB, LPIPS 0.159 against 0.165; synthetic 1080p pans and moving objects: 35.41 against 33.35 dB. It
+  costs GPU time: 1.94 against 1.06 ms per generated frame at 1080p on an RTX 5090. No effect on smaller frames or
+  with `fast_render`.
+
+### Changed
+
+- With static protection on (the default), the still test of the render trusts a pixel only after three unchanged
+  source pairs, like the protection itself: one pair in which a moving detail happened to cover the same place twice
+  no longer holds it still. On the realtime defaults: UVG 1080p 33.42 dB and LPIPS 0.165 (0.4.1: 33.23 and 0.173),
+  synthetic 1080p 33.35 dB (32.58); ground-truth triplets ATD 31.78, CS2 29.39, natural 38.16 dB (31.66, 29.32,
+  38.18). Local contrast of the in-between on UVG is 0.75 of the ground truth's (0.77): the held pixels were sharp
+  and often wrong. The age pass of static protection costs 0.08 to 0.10 ms more per pair on an RTX 4060 Ti; a
+  session without static protection is unchanged.
+
 ## [0.4.1] - 2026-11-17
 
 ### Changed

@@ -111,7 +111,15 @@ pub struct Options {
 }
 impl Options {
     pub fn new(width: u32, height: u32) -> Options {
-        let internal = if width.max(height) > 960 { Some(default_internal(width, height)) } else { None };
+        let internal = if width.max(height) > 960 {
+            Some(if crate::options::precise_default() && crate::options::precise_applies(width, height) {
+                crate::options::precise_internal(width, height)
+            } else {
+                default_internal(width, height)
+            })
+        } else {
+            None
+        };
         Options {
             width,
             height,
@@ -148,6 +156,7 @@ impl Options {
             linear_t: self.linear_t,
             protection_mask: false,
             near: crate::options::near_default(),
+            precise: crate::options::precise_default() && crate::options::precise_applies(self.width, self.height),
         }
     }
 }

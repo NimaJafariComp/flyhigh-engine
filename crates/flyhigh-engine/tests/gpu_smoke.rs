@@ -238,9 +238,15 @@ fn keep_static_leaves_line_art_on_a_pan_alone() {
         last
     };
     let (off, on) = (run(false), run(true));
-    let differ = off.chunks(4).zip(on.chunks(4)).filter(|(a, b)| (0..3).any(|c| a[c].abs_diff(b[c]) > 30)).count();
-    eprintln!("line art pan: protection on vs off, {differ} pixels differ by more than 30");
-    assert!(differ < 20, "protection changed {differ} pixels of moving line art");
+    // against the true in-between: with protection the still test waits for three unchanged pairs, so the two
+    // renders differ where the unprotected one holds a fill pixel for one pair; protection must not add wrong pixels
+    let truth = line_art(12.5 * 6.0);
+    let wrong = |img: &[u8]| {
+        img.chunks(4).zip(truth.chunks(4)).filter(|(a, b)| (0..3).any(|c| a[c].abs_diff(b[c]) > 30)).count()
+    };
+    let (w_off, w_on) = (wrong(&off), wrong(&on));
+    eprintln!("line art pan: pixels off the true in-between by more than 30: protection off {w_off}, on {w_on}");
+    assert!(w_on <= w_off + 20, "protection left {w_on} wrong pixels of moving line art against {w_off} without it");
 }
 
 #[test]

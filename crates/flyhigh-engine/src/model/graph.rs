@@ -144,9 +144,7 @@ pub fn cascade(ops: &[Value], levels: u32, fine_iters: &[u32]) -> Option<Vec<Val
         }
     }
     let sfx = |l: u32| if l == 0 { String::new() } else { format!("#{l}") };
-    let up = |src: String, dst: String| {
-        serde_json::json!({"op": "interpolate", "in": [src], "out": [dst], "scale": 2, "mode": "bilinear", "align_corners": false})
-    };
+    let up = |src: String, dst: String| serde_json::json!({"op": "interpolate", "in": [src], "out": [dst], "scale": 2, "mode": "bilinear", "align_corners": false});
     let mut out = Vec::new();
     for l in 1..levels {
         for img in ["A", "B"] {
@@ -164,7 +162,9 @@ pub fn cascade(ops: &[Value], levels: u32, fine_iters: &[u32]) -> Option<Vec<Val
             if n == "flow" {
                 // flow is in pixels of its own level: twice the grid, twice the value
                 out.push(up(below, format!("{here}:up")));
-                out.push(serde_json::json!({"op": "scale", "in": [format!("{here}:up")], "out": [here], "factor": 2.0}));
+                out.push(
+                    serde_json::json!({"op": "scale", "in": [format!("{here}:up")], "out": [here], "factor": 2.0}),
+                );
             } else {
                 out.push(up(below, here));
             }
