@@ -12,6 +12,7 @@
 //! browser host awaits the promise of `fh_vid_stats` before the first `generate` of the interval (the lookahead hides it).
 use crate::gmhs::{CadenceScratch, PairStats, StatsRun};
 use crate::gpu::memory::Charge;
+use crate::net::build::PlanResources;
 use crate::{gmhs, Blob, Gpu, NetOpts, SessionExt, Step, TimedRun};
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -238,8 +239,21 @@ impl GenTex {
             cascade_iters: crate::options::cascade_for(opts.precise).1,
         };
         let mut sess = Vec::new();
+        let mut resources = PlanResources::default();
         for _ in 0..n_sess {
-            sess.push(SessionExt::new(gpu, blob, ops, opts.w, opts.h, opts.k, opts.iw, opts.ih, tune, &net));
+            sess.push(SessionExt::new_with(
+                gpu,
+                blob,
+                ops,
+                opts.w,
+                opts.h,
+                opts.k,
+                opts.iw,
+                opts.ih,
+                tune,
+                &net,
+                &mut resources,
+            ));
         }
         let scratch = if cadence {
             Some(CadenceScratch::new(gpu, &sess[0]).context("cadence: GMHS maps missing")?)

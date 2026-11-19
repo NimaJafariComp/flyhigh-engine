@@ -176,10 +176,20 @@ fn cadence_1080p_memory() {
 fn video_plans_share_immutable_convolution_weights() {
     let e = engine();
     let generator = anime(&e, W, H);
-    let first_conv_weights: Vec<_> = generator.sess.iter().map(|s| {
-        let conv = s.plan_pair.iter().find(|s| matches!(s, Step::Compute { pipe, .. }
-            if ["conv", "implicit", "fused", "tconv", "fdirect"].iter().any(|prefix| pipe.starts_with(prefix)))).unwrap();
-        conv.allocations().nth(1).unwrap().clone()
-    }).collect();
+    let first_conv_weights: Vec<_> = generator
+        .sess
+        .iter()
+        .map(|s| {
+            let conv = s
+                .plan_pair
+                .iter()
+                .find(|s| {
+                    matches!(s, Step::Compute { pipe, .. }
+            if ["conv", "implicit", "fused", "tconv", "fdirect"].iter().any(|prefix| pipe.starts_with(prefix)))
+                })
+                .unwrap();
+            conv.allocations().nth(1).unwrap().clone()
+        })
+        .collect();
     assert!(first_conv_weights.iter().all(|w| std::rc::Rc::ptr_eq(w, &first_conv_weights[0])));
 }

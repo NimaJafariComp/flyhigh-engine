@@ -20,12 +20,24 @@ pub fn set_t(gpu: &Gpu, deps: &[PhaseDep], t: f32) {
     }
 }
 
+type PackKey = (String, u32, u32);
+
+#[derive(Default)]
+pub(crate) struct PlanResources {
+    weights: Weights,
+}
+
+#[derive(Default)]
+struct Weights {
+    raw: HashMap<String, Rc<Buffer>>,
+    gemm: HashMap<PackKey, (Rc<Buffer>, u32, u32)>,
+    tap: HashMap<PackKey, (Rc<Buffer>, u32, u32, u32)>,
+}
+
 pub struct BuildCtx<'a> {
     pub gpu: &'a Gpu,
     pub blob: &'a Blob,
-    pub wcache: HashMap<String, Rc<Buffer>>,
-    pub bcache: HashMap<String, (Rc<Buffer>, u32, u32)>,
-    pub bcache4: HashMap<String, (Rc<Buffer>, u32, u32, u32)>,
+    weights: Weights,
     pub k: u32,
     pub t: f32,
     pub hs: u32,
@@ -49,9 +61,7 @@ impl<'a> BuildCtx<'a> {
         BuildCtx {
             gpu,
             blob,
-            wcache: HashMap::new(),
-            bcache: HashMap::new(),
-            bcache4: HashMap::new(),
+            weights: Weights::default(),
             k,
             t,
             hs,
@@ -99,27 +109,29 @@ impl<'a> BuildCtx<'a> {
 
 impl<'a> BuildCtx<'a> {
     pub fn wb(&mut self, name: &str) -> Rc<Buffer> {
-        if let Some(b) = self.wcache.get(name) {
+        if let Some(b) = self.weights.raw.get(name) {
             return b.clone();
         }
         let b = self.gpu.buf(&self.blob.weight(name));
-        self.wcache.insert(name.to_string(), b.clone());
+        self.weights.raw.insert(name.to_string(), b.clone());
         b
     }
     pub fn bbuf(&mut self, name: &str, cin: u32, cout: u32) -> (Rc<Buffer>, u32, u32) {
-        if let Some(b) = self.bcache.get(name) {
+        let key = (name.to_owned(), cin, cout);
+        if let Some(b) = self.weights.gemm.get(&key) {
             return b.clone();
         }
         let b = self.gpu.buildb(&self.blob.weight(name), cin, cout);
-        self.bcache.insert(name.to_string(), b.clone());
+        self.weights.gemm.insert(key, b.clone());
         b
     }
     pub fn bbuf_tap(&mut self, name: &str, cin: u32, cout: u32) -> (Rc<Buffer>, u32, u32, u32) {
-        if let Some(b) = self.bcache4.get(name) {
+        let key = (name.to_owned(), cin, cout);
+        if let Some(b) = self.weights.tap.get(&key) {
             return b.clone();
         }
         let b = self.gpu.buildb_tap(&self.blob.weight(name), cin, cout);
-        self.bcache4.insert(name.to_string(), b.clone());
+        self.weights.tap.insert(key, b.clone());
         b
     }
 }
@@ -506,6 +518,26 @@ pub fn build_network_ex(
     tune: Option<&TuneTable>,
     net: &NetOpts,
 ) -> (Tensor, HashMap<String, Tensor>, Vec<PhaseDep>) {
+    build_network_with(gpu, blob, ops, a, b, k, t, iw, ih, plan, plan_mid, tune, net, &mut PlanResources::default())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_network_with(
+    gpu: &Gpu,
+    blob: &Blob,
+    ops: &[Value],
+    a: &Tensor,
+    b: &Tensor,
+    k: u32,
+    t: f32,
+    iw: u32,
+    ih: u32,
+    plan: &mut Vec<Step>,
+    plan_mid: Option<&mut Vec<Step>>,
+    tune: Option<&TuneTable>,
+    net: &NetOpts,
+    resources: &mut PlanResources,
+) -> (Tensor, HashMap<String, Tensor>, Vec<PhaseDep>) {
     let (hp, wp) = (a.h, a.w);
     let (ihp, iwp) = (ih.div_ceil(32) * 32, iw.div_ceil(32) * 32);
     let internal = (iwp, ihp) != (wp, hp);
@@ -527,6 +559,7 @@ pub fn build_network_ex(
     gpu.arena_ids.borrow_mut().clear();
     let mut env: HashMap<String, Tensor> = HashMap::new();
     let mut cx = BuildCtx::new(gpu, blob, k, t, ihp, iwp);
+    cx.weights = std::mem::take(&mut resources.weights);
     cx.cubic = net.cubic;
     cx.render_flags = net.render_flags();
     cx.pin(a);
@@ -661,7 +694,8 @@ pub fn build_network_ex(
         *gpu.arena.borrow_mut() = arena_was;
         gpu.arena_ids.borrow_mut().clear();
         let r = env["render"].clone();
-        return (r, env, std::mem::take(&mut cx.t_deps));
+        resources.weights = cx.weights;
+        return (r, env, cx.t_deps);
     }
     if let Some(op) = rop {
         let ins = names(op, "in"); // A, B, flow_tq, vis_tq, R_t
@@ -698,10 +732,11 @@ pub fn build_network_ex(
     #[cfg(test)]
     if !retained.is_empty() {
         let weights = cx
-            .wcache
+            .weights
+            .raw
             .values()
-            .chain(cx.bcache.values().map(|b| &b.0))
-            .chain(cx.bcache4.values().map(|b| &b.0))
+            .chain(cx.weights.gemm.values().map(|b| &b.0))
+            .chain(cx.weights.tap.values().map(|b| &b.0))
             .map(|b| Rc::as_ptr(&b.charge))
             .collect::<std::collections::HashSet<_>>();
         let mut bytes = pair_buffers;
@@ -724,5 +759,6 @@ pub fn build_network_ex(
     *gpu.arena.borrow_mut() = arena_was; // released scratch that nobody took is dropped here (VRAM freed)
     gpu.arena_ids.borrow_mut().clear();
     let r = env["render"].clone();
-    (r, env, std::mem::take(&mut cx.t_deps))
+    resources.weights = cx.weights;
+    (r, env, cx.t_deps)
 }
