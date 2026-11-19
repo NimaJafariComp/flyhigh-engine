@@ -167,6 +167,13 @@ fn cadence_1080p_memory() {
         gen.add_output(&e.gpu);
     }
     let active = core.report().memory;
+    let scratch = gen.scratch.as_ref().unwrap();
+    assert_eq!(
+        active.cadence_scratch.live_bytes,
+        [&scratch.bg_copy, &scratch.mask_a, &scratch.mask_b, &scratch.trust_a, &scratch.trust_b, &scratch.part]
+            .iter().map(|b| b.size()).sum::<u64>(),
+        "no full-size composite intermediate"
+    );
     eprintln!("1080p cadence memory: {}", serde_json::to_string(&active).unwrap());
     drop(gen);
     assert_eq!(core.report().memory.live_bytes, before.live_bytes);
