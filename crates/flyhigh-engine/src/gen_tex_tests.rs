@@ -171,7 +171,9 @@ fn cadence_1080p_memory() {
     assert_eq!(
         active.cadence_scratch.live_bytes,
         [&scratch.bg_copy, &scratch.mask_a, &scratch.mask_b, &scratch.trust_a, &scratch.trust_b, &scratch.part]
-            .iter().map(|b| b.size()).sum::<u64>(),
+            .iter()
+            .map(|b| b.size())
+            .sum::<u64>(),
         "no full-size composite intermediate"
     );
     eprintln!("1080p cadence memory: {}", serde_json::to_string(&active).unwrap());
