@@ -67,10 +67,15 @@ match stream.generate(engine.gpu(), 0.5, out)? { Generated::Written => present(o
 
 `StreamOptions`: `mode` (`Realtime`, `Video` with one frame of lookahead), `cadence` (anime on twos, video mode),
 `scene_cut` (`Some(SceneCut { threshold })`, default 0.08), `held_frames` (`Some(HeldFrames { mean, max })`, default
-off), `inputs` / `outputs` created up front. `push_timed` and `generate_timed` do the same work under timestamp
-queries and return the `TimedRun` to await (`block(gpu)` natively) for the GPU milliseconds the Pacer's
-`cost_sample` takes. `stream.report()` counts pushes, pairs, mids, classifications. Details:
+off), `inputs` / `outputs` created up front. `push_timed` and `generate_timed` submit the same work and
+return no `TimedRun` when timing is unavailable or all readback slots are busy. Await
+`TimedRun::finish` (or `block(gpu)` natively) for total GPU milliseconds, or `finish_parts` (`block_parts(gpu)`
+natively) to see the once-per-pair linear-path setup and the frame render separately. `stream.report()` counts pushes, pairs,
+mids, and classifications. Details:
 [ARCHITECTURE.md](../ARCHITECTURE.md).
+
+Native Metal resolves timestamp counters only after the sampling submission completes. Native asynchronous hosts
+must keep polling the device until the result is ready; the blocking methods handle both submissions.
 
 Camera warp for games: `stream.mouse(gpu, t_ms, dx, dy)` per mouse event (on the clock of `push`'s timestamps:
 arrival times in host ms), `stream.set_mouse_captured(bool)`, and at present time

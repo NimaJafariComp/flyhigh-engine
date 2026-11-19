@@ -9,6 +9,15 @@ impl Gpu {
     // with `qs`: pass-level timestamps (the WebGPU-standard kind) at the beginning of the first compute pass
     // (query 0) and the end of the last one (query 1) — the whole plan's GPU time without encoder-level queries
     pub fn encode_plan_ts(&self, enc: &mut wgpu::CommandEncoder, plan: &[Step], qs: Option<&wgpu::QuerySet>) {
+        self.encode_plan_query_range(enc, plan, qs.map(|q| (q, 0)))
+    }
+
+    pub(crate) fn encode_plan_query_range(
+        &self,
+        enc: &mut wgpu::CommandEncoder,
+        plan: &[Step],
+        qs: Option<(&wgpu::QuerySet, u32)>,
+    ) {
         let last_c = plan.iter().rposition(|s| matches!(s, Step::Compute { .. }));
         let split = self.pass_split.get();
         let mut first = true;
@@ -24,10 +33,10 @@ impl Gpu {
                     let end = if split > 0 { j.min(i + split) } else { j }; // this pass = plan[i..end)
                     let is_last = last_c.is_some_and(|l| l < end);
                     let tw = match qs {
-                        Some(q) if first || is_last => Some(wgpu::ComputePassTimestampWrites {
+                        Some((q, start)) if first || is_last => Some(wgpu::ComputePassTimestampWrites {
                             query_set: q,
-                            beginning_of_pass_write_index: if first { Some(0) } else { None },
-                            end_of_pass_write_index: if is_last { Some(1) } else { None },
+                            beginning_of_pass_write_index: first.then_some(start),
+                            end_of_pass_write_index: is_last.then_some(start + 1),
                         }),
                         _ => None,
                     };

@@ -14,7 +14,7 @@ use serde::Deserialize;
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::future_to_promise;
+use wasm_bindgen_futures::{future_to_promise, JsFuture};
 
 fn err(e: impl std::fmt::Display) -> JsValue {
     JsValue::from_str(&e.to_string())
@@ -120,7 +120,9 @@ fn u32_value(v: &serde_json::Value, what: &str) -> Result<u32, JsValue> {
 
 fn timed_promise(run: Option<TimedRun>) -> js_sys::Promise {
     match run {
-        Some(r) => future_to_promise(async move { Ok(JsValue::from_f64(r.finish().await)) }),
+        Some(r) => future_to_promise(async move {
+            Ok(r.finish_parts().await.map_or(JsValue::NULL, |part| JsValue::from_f64(part.total_ms)))
+        }),
         None => js_sys::Promise::resolve(&JsValue::NULL),
     }
 }
@@ -598,15 +600,34 @@ impl FhStream {
         Ok(obj)
     }
 
-    /// `generate` with its GPU time: `{ written, cost }`, `cost` a promise of milliseconds (`null` without timestamp
-    /// queries, when nothing was written, or for a cadence composite). The Pacer's `costSample(now, 'mid', ms)` takes it; its
-    /// probe requests are meant for this call.
+    /// `generate` with its GPU time: `{ written, cost, timing }`. Both promises resolve to `null` when timing
+    /// is unavailable. `cost` is total milliseconds; `timing` separates `setupMs` (first linear phase only)
+    /// from `frameMs` and includes `totalMs`.
     #[wasm_bindgen(js_name = generateTimed)]
     pub fn generate_timed(&self, t: f32, out: u32) -> Result<JsValue, JsValue> {
         let (g, run) = self.inner.borrow_mut().generate_timed(&self.gpu, t, out as usize).map_err(err)?;
         let obj = js_sys::Object::new();
         js_sys::Reflect::set(&obj, &JsValue::from_str("written"), &JsValue::from_bool(g == Generated::Written))?;
-        js_sys::Reflect::set(&obj, &JsValue::from_str("cost"), &timed_promise(run))?;
+        let timing = match run {
+            Some(r) => future_to_promise(async move {
+                match r.finish_parts().await {
+                    Some(parts) => to_js(&parts),
+                    None => Ok(JsValue::NULL),
+                }
+            }),
+            None => js_sys::Promise::resolve(&JsValue::NULL),
+        };
+        let sample = timing.clone();
+        let cost = future_to_promise(async move {
+            let parts = JsFuture::from(sample).await?;
+            if parts.is_null() {
+                Ok(JsValue::NULL)
+            } else {
+                js_sys::Reflect::get(&parts, &JsValue::from_str("totalMs"))
+            }
+        });
+        js_sys::Reflect::set(&obj, &JsValue::from_str("cost"), &cost)?;
+        js_sys::Reflect::set(&obj, &JsValue::from_str("timing"), &timing)?;
         Ok(obj.into())
     }
 
