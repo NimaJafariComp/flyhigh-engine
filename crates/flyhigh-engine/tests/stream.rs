@@ -49,6 +49,53 @@ fn engine() -> Option<Engine> {
     }
 }
 
+#[test]
+#[ignore = "requires a GPU"]
+fn memory_returns_to_baseline_after_stream_drop() {
+    let e = engine().expect("a GPU is required for this test");
+    let core = flyhigh_engine::Engine::from_shared(e.gpu.clone());
+    let baseline = core.report().memory;
+    let open = |mode, cadence| {
+        let opts = StreamOptions { mode, cadence, ..Default::default() };
+        Stream::new(&e.gpu, &e.blob, &e.ops, TexOptions::new(W, H), &opts, None).unwrap()
+    };
+
+    let realtime = open(Mode::Realtime, false);
+    let real = core.report().memory;
+    let slot_bytes = u64::from(W) * u64::from(H) * 4;
+    assert_eq!(
+        real.frame_textures.live_bytes,
+        slot_bytes * (realtime.report().inputs + realtime.report().outputs) as u64
+    );
+    assert!(real.tensors.live_bytes > 0);
+    assert_eq!(real.cadence_scratch.live_bytes, 0);
+    drop(realtime);
+    assert_eq!(core.report().memory.live_bytes, baseline.live_bytes);
+
+    let video = open(Mode::Video, false);
+    let video_mem = core.report().memory;
+    assert_eq!(video_mem.cadence_scratch.live_bytes, 0);
+    assert!(video_mem.tensors.live_bytes > real.tensors.live_bytes);
+    drop(video);
+
+    let mut anime = open(Mode::Video, true);
+    anime.warm_up(&e.gpu).unwrap();
+    let active = core.report().memory;
+    assert!(active.cadence_scratch.live_bytes > 0);
+    assert!(active.live_bytes > video_mem.live_bytes);
+    anime.reset();
+    assert_eq!(core.report().memory.live_bytes, active.live_bytes);
+    anime.add_input_texture(e.gpu.input_texture(W, H)).unwrap();
+    assert_eq!(core.report().memory.live_bytes, active.live_bytes);
+    drop(anime);
+    let stopped = core.report().memory;
+    assert_eq!(stopped.live_bytes, baseline.live_bytes);
+    assert_eq!(stopped.frame_textures.live_bytes, 0);
+    assert_eq!(stopped.cadence_scratch.live_bytes, 0);
+    assert_eq!(stopped.peak_bytes, active.peak_bytes);
+    assert!(stopped.peak_bytes >= active.live_bytes);
+}
+
 // a soft pattern shifted `dx` px to the right
 fn frame(dx: f32) -> Vec<u8> {
     let mut v = vec![0u8; (W * H * 4) as usize];
