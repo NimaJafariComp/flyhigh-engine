@@ -1,5 +1,6 @@
 //! Per-shape kernel choice at build time (`BuildCtx::conv_pick`) and the asynchronous discovery autotune.
 
+use crate::gpu::memory::Buffer;
 use crate::model::graph::count_uses;
 use crate::{
     build, cand_list, cand_name, Blob, BuildCtx, ConvArgs, Gpu, OpOutput, Tensor, TiledOpts, TuneTable, CAND_DIRECT,
@@ -15,8 +16,8 @@ use std::collections::HashMap;
 pub struct ConvOp<'a> {
     pub x: &'a Tensor,
     pub weight: &'a str,
-    pub bias: &'a wgpu::Buffer,
-    pub slope: &'a wgpu::Buffer,
+    pub bias: &'a Buffer,
+    pub slope: &'a Buffer,
     pub cin: u32,
     pub cout: u32,
     pub stride: u32,

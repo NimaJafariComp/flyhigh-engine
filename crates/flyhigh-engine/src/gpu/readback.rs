@@ -84,6 +84,7 @@ pub struct Readback<T> {
     fut: MapWait,
     decode: Decode<T>,
     done: Option<Done>,
+    _allocation: Option<std::rc::Rc<super::memory::Charge>>,
 }
 /// Turns the mapped bytes into the result.
 pub type Decode<T> = Box<dyn FnOnce(&[u8]) -> T>;
@@ -93,7 +94,12 @@ impl<T> Readback<T> {
     /// `stage` must be `MAP_READ` and already the destination of a submitted copy; `done` runs after the decode.
     pub fn new(stage: wgpu::Buffer, decode: Decode<T>, done: Option<Done>) -> Self {
         let fut = map_read(&stage);
-        Readback { stage, fut, decode, done }
+        Readback { stage, fut, decode, done, _allocation: None }
+    }
+    pub(crate) fn tracked(stage: &super::memory::Buffer, decode: Decode<T>, done: Option<Done>) -> Self {
+        let mut readback = Self::new((**stage).clone(), decode, done);
+        readback._allocation = Some(stage.charge.clone());
+        readback
     }
     pub async fn finish(self) -> Result<T> {
         self.fut.await.map_err(|e| anyhow::anyhow!("map_async: {e:?}"))?;

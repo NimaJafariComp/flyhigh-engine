@@ -2,6 +2,7 @@
 //! compute pass over the two textures (classify.wgsl) and an 8-byte readback; the decision lands asynchronously,
 //! before the interval's first mid is due.
 use super::IntervalKind;
+use crate::gpu::memory::Buffer;
 use crate::gpu::readback::Readback;
 use crate::Gpu;
 use bytemuck::{Pod, Zeroable};
@@ -98,9 +99,9 @@ impl Classification {
 
 pub struct Classifier {
     sampler: wgpu::Sampler,
-    stats: wgpu::Buffer,
-    params: wgpu::Buffer,
-    stages: Vec<(wgpu::Buffer, Rc<Cell<bool>>)>,
+    stats: Buffer,
+    params: Buffer,
+    stages: Vec<(Rc<Buffer>, Rc<Cell<bool>>)>,
     bind_groups: HashMap<(usize, usize), wgpu::BindGroup>,
     thresholds: Thresholds,
     /// The mean difference of the last pair that was not a hold, as its readback landed.
@@ -110,33 +111,32 @@ pub struct Classifier {
 
 impl Classifier {
     pub fn new(gpu: &Gpu, thresholds: Thresholds) -> Classifier {
-        use wgpu::util::DeviceExt;
         let sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("fh_classify"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
-        let stats = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let stats = gpu.buffer(&wgpu::BufferDescriptor {
             label: Some("fh_classify_stats"),
             size: 8,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let params = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let params = gpu.buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("fh_classify_params"),
             contents: bytemuck::bytes_of(&ClassifyParams { gw: GRID.0, gh: GRID.1, _a: 0, _b: 0 }),
             usage: wgpu::BufferUsages::UNIFORM,
         });
         let stages = (0..IN_FLIGHT)
             .map(|_| {
-                let b = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                let b = gpu.buffer(&wgpu::BufferDescriptor {
                     label: Some("fh_classify_stage"),
                     size: 8,
                     usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 });
-                (b, Rc::new(Cell::new(false)))
+                (Rc::new(b), Rc::new(Cell::new(false)))
             })
             .collect();
         Classifier {
@@ -195,8 +195,8 @@ impl Classifier {
         let cells = GRID.0 * GRID.1;
         let last_moving = self.last_moving.clone();
         let last_held = self.last_held.clone();
-        Some(Readback::new(
-            stage,
+        Some(Readback::tracked(
+            &stage,
             Box::new(move |d: &[u8]| {
                 let s: &[u32] = bytemuck::cast_slice(&d[..8]);
                 let c = Classification::from_stats(s[0], s[1], cells, &th).after(last_moving.get(), &th);

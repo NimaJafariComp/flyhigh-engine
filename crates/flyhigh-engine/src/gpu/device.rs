@@ -1,5 +1,6 @@
 //! Adapter selection and device creation: features, limits, the f16 / f32 decision; or a device the host already has.
 
+use super::memory::{Kind, Memory};
 use crate::{parse_tune, EngineOptions, Gpu, Precision};
 use anyhow::Result;
 use std::collections::HashMap;
@@ -218,11 +219,12 @@ impl Gpu {
         let shader_compiler = (info.backend == wgpu::Backend::Dx12).then(super::dxc::loaded);
         #[cfg(not(windows))]
         let shader_compiler = None;
-        let zero = Rc::new(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let memory = Memory::default();
+        let zero = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("fh_zero"),
             contents: bytemuck::cast_slice(&[0f32; 256]),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
-        }));
+        });
         // f16 ones: PReLU slope of 1 turns the fused epilogue into identity, so no-activation convs
         // (conv2d heads, up.w) run through the same Tensor-Core kernel instead of the naive conv.
         let ones_bytes: Vec<u8> = if caps.f32_mode {
@@ -230,11 +232,11 @@ impl Gpu {
         } else {
             bytemuck::cast_slice(&vec![half::f16::from_f32(1.0).to_bits(); 1024]).to_vec()
         };
-        let ones = Rc::new(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let ones = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("fh_ones"),
             contents: &ones_bytes,
             usage: wgpu::BufferUsages::STORAGE,
-        }));
+        });
         // the choices depend on the GPU, its driver, the kernel set (precision, tensor cores) and the engine's kernels
         let tune_file = opts.tune_cache.as_ref().map(|d| {
             let drv: u32 = format!("{} {}", info.driver, info.driver_info)
@@ -262,8 +264,9 @@ impl Gpu {
             device,
             queue,
             p: std::cell::RefCell::new(HashMap::new()),
-            zero,
-            ones,
+            zero: Rc::new(memory.buffer(Kind::InitializedBuffers, zero)),
+            ones: Rc::new(memory.buffer(Kind::InitializedBuffers, ones)),
+            memory,
             name,
             coop: caps.coop,
             autotune: opts.autotune,
@@ -278,7 +281,6 @@ impl Gpu {
             arena_ids: std::cell::RefCell::new(HashMap::new()),
             scratch: std::cell::RefCell::new(Vec::new()),
             alloc_bytes: std::cell::Cell::new(0),
-            last_pb: std::cell::RefCell::new(None),
             pass_split: std::cell::Cell::new(0),
             submit_split: std::cell::Cell::new(0),
         }

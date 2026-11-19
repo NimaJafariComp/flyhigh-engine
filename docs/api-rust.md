@@ -29,7 +29,9 @@ let rgba = s.read_rgba(out)?.block(engine.gpu())?;            // or present s.ou
   the device was created with them). `engine.info()` names the device, its kernel class (`tc-f16`,
   `portable-f16`, `portable-f32`) and, on DX12, the HLSL compiler wgpu loaded (`shader_compiler`: `dxc`, or `fxc`
   without `dxcompiler.dll`, see `EngineOptions::dxc_path`); `engine.report()` counts compiled kernels, autotune
-  entries and tensor bytes.
+  entries, cumulative `tensor_bytes`, and live and peak GPU allocation bytes in
+  [`memory`](../ARCHITECTURE.md#options-and-reports). Kernel-level tensor buffers use
+  `gpu::memory::Buffer`, which dereferences to `wgpu::Buffer` for queue operations.
   `engine.gpu()` is the wgpu context for the host's own surfaces and copies.
 - `Model::from_dir(dir)` / `Model::from_bytes(graph, manifest, weights)` load and validate a checkpoint
   (`model.info()`: name, training step, graph size, render sampler, format version). Several models may live beside

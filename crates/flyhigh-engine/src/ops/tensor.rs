@@ -1,5 +1,6 @@
 //! `Tensor`: a buffer with its channel / height / width shape, channel offset and scale (views).
 
+use crate::gpu::memory::Buffer;
 use std::rc::Rc;
 
 #[derive(Clone)]
@@ -7,7 +8,7 @@ use std::rc::Rc;
 // Views make slice / scale / neg / mul_t free (no dispatch): kernels that understand them read with the offset and
 // multiply on load; kernels that do not get a materialized copy (Gpu::mat) first.
 pub struct Tensor {
-    pub buf: Rc<wgpu::Buffer>,
+    pub buf: Rc<Buffer>,
     pub c: u32,
     pub h: u32,
     pub w: u32,

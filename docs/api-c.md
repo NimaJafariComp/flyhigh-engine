@@ -32,7 +32,8 @@ fh_session_read_rgba(s, out, rgba, 1920 * 1080 * 4);           // waits for the 
   compact memory, DXC path, as `EngineOptions`. `fh_engine_info` writes the device as JSON (name, kernel class
   `tc-f16` / `portable-f16` / `portable-f32`, timestamp queries, and on DX12 `shader_compiler`: `dxc`, or `fxc`
   when `dxcompiler.dll` was not found); `fh_engine_report_json` adds kernels compiled, autotune entries and tensor
-  bytes. Destroy sessions and streams before the engine.
+  bytes, with live and peak allocation bytes in [`memory`](../ARCHITECTURE.md#options-and-reports).
+  Destroy sessions and streams before the engine.
 - `fh_model_load(dir)` / `fh_model_from_bytes(graph, len, manifest, len, weights, len)` load and check a checkpoint
   (format version, tensor table); `fh_model_info` is the model as JSON. Several models may live beside one engine.
 - `FhSessionOptions`: `width`, `height`, `internal_w` / `internal_h` (0, 0 = automatic: the 480-line rung above

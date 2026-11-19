@@ -1,5 +1,6 @@
 //! `SessionExt`: the texture path with input / output slots, a pair plan, a mid plan and the fast render.
 
+use crate::gpu::memory::{Buffer, Charge};
 use crate::ops::step::meta;
 use crate::{
     build_network_ex, clone_step, set_t, workgroups_2d, Binding, Blob, Gpu, NetOpts, PhaseDep, StaticParams, Step,
@@ -8,7 +9,6 @@ use crate::{
 use bytemuck::{Pod, Zeroable};
 use serde_json::Value;
 use std::collections::HashMap;
-use wgpu::util::DeviceExt;
 
 // Host-pool session (the browser extension's shape): the host owns N input frame textures (a history ring it also
 // presents from) and M output textures; the runtime runs the pair stage on any two input slots and then any number of
@@ -23,6 +23,7 @@ pub struct SessionExt {
     pub k: u32,
     pub ins: Vec<(wgpu::Texture, wgpu::TextureView)>,
     pub outs: Vec<(wgpu::Texture, wgpu::TextureView)>,
+    owned_slots: Vec<Charge>,
     pub a: Tensor,
     pub b: Tensor,
     pub plan_pair: Vec<Step>,
@@ -39,7 +40,7 @@ pub struct SessionExt {
     age_steps: std::cell::RefCell<HashMap<(usize, usize), Step>>, // fast render + static: (slot A, slot B) -> age pass
 }
 // the cached render_tex step of a (slot A, slot B, out) triple with its uniform buffer and the parameters it holds
-type FastRenderCache = HashMap<(usize, usize, usize), (Step, wgpu::Buffer, RenderTexParams)>;
+type FastRenderCache = HashMap<(usize, usize, usize), (Step, Buffer, RenderTexParams)>;
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct RenderTexParams {
@@ -105,6 +106,7 @@ impl SessionExt {
             k,
             ins: Vec::new(),
             outs: Vec::new(),
+            owned_slots: Vec::new(),
             a,
             b,
             plan_pair,
@@ -193,7 +195,7 @@ impl SessionExt {
                 _b: 0,
                 _c: 0,
             };
-            let pb = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            let pb = gpu.buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("fh_render_tex_params"),
                 contents: bytemuck::bytes_of(&p),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
@@ -227,6 +229,8 @@ impl SessionExt {
                     Binding::Params,
                 ],
                 bytemuck::bytes_of(&p),
+                [&*ftq.buf, &*vtq.buf, &*rt.buf, &**age_buf, &pb],
+                None,
             );
             (Step::Compute { pipe: "render_tex", bg, groups: workgroups_2d(self.w, self.h, 1), meta: m }, pb, p)
         });
@@ -260,12 +264,14 @@ impl SessionExt {
     }
     pub fn add_input(&mut self, gpu: &Gpu) -> usize {
         let t = gpu.input_texture_l(self.w, self.h, &format!("fh_in_{}", self.ins.len()));
+        self.owned_slots.push(gpu.memory.rgba8_slot(&t));
         let v = t.create_view(&wgpu::TextureViewDescriptor::default());
         self.ins.push((t, v));
         self.ins.len() - 1
     }
     pub fn add_output(&mut self, gpu: &Gpu) -> usize {
         let t = gpu.output_texture_l(self.w, self.h, &format!("fh_out_{}", self.outs.len()));
+        self.owned_slots.push(gpu.memory.rgba8_slot(&t));
         let v = t.create_view(&wgpu::TextureViewDescriptor::default());
         self.outs.push((t, v));
         self.outs.len() - 1
@@ -296,7 +302,7 @@ impl SessionExt {
             }
             let p =
                 DownsampleParams { w: self.w, h: self.h, iw: self.wp, ih: self.hp, ow: dst.w, oh: dst.h, _a: 0, _b: 0 };
-            let pb = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            let pb = gpu.buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("fh_tex_down_params"),
                 contents: bytemuck::bytes_of(&p),
                 usage: wgpu::BufferUsages::UNIFORM,
@@ -317,6 +323,8 @@ impl SessionExt {
                 meta: meta(
                     vec![Binding::Texture(self.w, self.h), Binding::Buffer(dst.buf.size()), Binding::Params],
                     bytemuck::bytes_of(&p),
+                    [&*dst.buf, &pb],
+                    None,
                 ),
             }
         }))
@@ -351,9 +359,9 @@ impl SessionExt {
                 let mut c = self.age_steps.borrow_mut();
                 let step = c.entry((a.0, b.0)).or_insert_with(|| {
                     let p = StaticParams::new(&self.net, self.w, self.h, self.wp, self.hp);
-                    let mask: &wgpu::Buffer = self.env.get("mask").map_or(&gpu.zero, |m| &m.buf);
+                    let mask = self.env.get("mask").map_or(&gpu.zero, |m| &m.buf);
                     let state = &self.env["static:state"].buf;
-                    let pb = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    let pb = gpu.buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: Some("fh_age_params"),
                         contents: bytemuck::bytes_of(&p),
                         usage: wgpu::BufferUsages::UNIFORM,
@@ -384,6 +392,8 @@ impl SessionExt {
                                 Binding::Buffer(state.size()),
                             ],
                             bytemuck::bytes_of(&p),
+                            [&*age.buf, &**mask, &**state, &pb],
+                            None,
                         ),
                     }
                 });

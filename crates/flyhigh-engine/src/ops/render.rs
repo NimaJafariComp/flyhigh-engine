@@ -1,5 +1,6 @@
 //! The final render: warped sources, visibility, residual, optional static protection; blend mixing.
 
+use crate::gpu::memory::Buffer;
 use crate::{workgroups_2d, Gpu, LumaParams, NearKParams, NearParams, OpOutput, RenderParams, Tensor};
 
 /// What the render reads: the two source frames (plain, full resolution), the flow and visibility maps of the phase
@@ -24,7 +25,7 @@ pub struct RenderOpts<'a> {
     pub cubic: bool,
     /// render.wgsl's mode word: bit 0 decisive blend, bit 1 still test (`NetOpts::render_flags`)
     pub flags: u32,
-    pub static_age: Option<(&'a wgpu::Buffer, u32)>,
+    pub static_age: Option<(&'a Buffer, u32)>,
 }
 
 impl Gpu {

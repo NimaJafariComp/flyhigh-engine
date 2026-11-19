@@ -4,6 +4,7 @@
 //! (warp_refine), the minimum of each taken by warp_best. It reaches the calibrator through a 16-byte readback a frame
 //! or so later; nothing here waits on the GPU.
 use super::calib::{CalibOptions, Calibration, InputCalibrator};
+use crate::gpu::memory::{Buffer, Charge, Kind};
 use crate::gpu::readback::Readback;
 use crate::Gpu;
 use bytemuck::{Pod, Zeroable};
@@ -152,11 +153,11 @@ type Shift = Option<(f64, f64)>;
 /// One pyramid level's buffers: the cell grids of the last two frames (`CameraWarp::cur` is the newer one's), its
 /// search result and the minimum taken from it.
 struct LevelBufs {
-    cells: [wgpu::Buffer; 2],
-    p_cells: wgpu::Buffer,
-    p_search: wgpu::Buffer,
-    p_best: wgpu::Buffer,
-    best: wgpu::Buffer,
+    cells: [Buffer; 2],
+    p_cells: Buffer,
+    p_search: Buffer,
+    p_best: Buffer,
+    best: Buffer,
     bg_cells: HashMap<(usize, usize), wgpu::BindGroup>,
     bg_search: [Option<wgpu::BindGroup>; 2],
     bg_best: Option<wgpu::BindGroup>,
@@ -172,16 +173,17 @@ pub struct CameraWarp {
     cur: usize,
     prev: Option<(usize, wgpu::TextureView)>,
     /// The search differences of the level being searched (levels run in order, so they share it).
-    sad: wgpu::Buffer,
-    zero: wgpu::Buffer,
-    mask: wgpu::Buffer,
-    grown: wgpu::Buffer,
-    p_lock: wgpu::Buffer,
-    p_grow: wgpu::Buffer,
-    p_render: [wgpu::Buffer; 2],
+    sad: Buffer,
+    zero: Buffer,
+    mask: Buffer,
+    grown: Buffer,
+    p_lock: Buffer,
+    p_grow: Buffer,
+    p_render: [Buffer; 2],
     out: [(wgpu::Texture, wgpu::TextureView); 2],
     out_i: usize,
-    stages: Vec<(wgpu::Buffer, Rc<Cell<bool>>)>,
+    stages: Vec<(Rc<Buffer>, Rc<Cell<bool>>)>,
+    _out_memory: Charge,
     /// Frames in arrival order with their shift on its way; the calibrator takes them in that order.
     pending: VecDeque<(f64, Option<Readback<Shift>>)>,
     bg_lock: HashMap<(usize, usize), wgpu::BindGroup>,
@@ -190,17 +192,16 @@ pub struct CameraWarp {
     last_shift: Shift,
 }
 
-fn uniform<T: Pod>(gpu: &Gpu, label: &str, v: &T) -> wgpu::Buffer {
-    use wgpu::util::DeviceExt;
-    gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+fn uniform<T: Pod>(gpu: &Gpu, label: &str, v: &T) -> Buffer {
+    gpu.buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some(label),
         contents: bytemuck::bytes_of(v),
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
     })
 }
 
-fn storage(gpu: &Gpu, label: &str, bytes: u64, extra: wgpu::BufferUsages) -> wgpu::Buffer {
-    gpu.device.create_buffer(&wgpu::BufferDescriptor {
+fn storage(gpu: &Gpu, label: &str, bytes: u64, extra: wgpu::BufferUsages) -> Buffer {
+    gpu.buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: bytes,
         usage: wgpu::BufferUsages::STORAGE | extra,
@@ -283,13 +284,13 @@ impl CameraWarp {
         });
         let stages = (0..IN_FLIGHT)
             .map(|_| {
-                let b = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                let b = gpu.buffer(&wgpu::BufferDescriptor {
                     label: Some("fh_warp_stage"),
                     size: 16,
                     usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 });
-                (b, Rc::new(Cell::new(false)))
+                (Rc::new(b), Rc::new(Cell::new(false)))
             })
             .collect();
         let lock_p = LockP { w, h, gw: mgw, gh: mgh, margin: opts.lock_margin, rel: opts.lock_rel, f, _b: 0.0 };
@@ -314,6 +315,7 @@ impl CameraWarp {
             p_render: [0, 1].map(|_| uniform(gpu, "fh_warp_render_p", &render_p)),
             out,
             out_i: 0,
+            _out_memory: gpu.memory.charge(Kind::AuxiliaryTextures, u64::from(w) * u64::from(h) * 4 * 2),
             stages,
             pending: VecDeque::new(),
             bg_lock: HashMap::new(),
@@ -428,7 +430,7 @@ impl CameraWarp {
                 let b: &[f32] = bytemuck::cast_slice(&d[..16]);
                 (b[2] > 0.5).then_some((b[0] as f64, b[1] as f64))
             };
-            Readback::new(stage, Box::new(decode), Some(Box::new(move || busy.set(false))))
+            Readback::tracked(&stage, Box::new(decode), Some(Box::new(move || busy.set(false))))
         });
         self.pending.push_back((t, rb));
         self.prev = Some((src.0, src.1.clone()));
@@ -583,7 +585,7 @@ impl CameraWarp {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn read_mask(&self, gpu: &Gpu) -> Vec<f32> {
         let bytes = (self.w.div_ceil(BLOCK) * self.h.div_ceil(BLOCK) * 4) as u64;
-        let stage = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let stage = gpu.buffer(&wgpu::BufferDescriptor {
             label: None,
             size: bytes,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
@@ -593,7 +595,7 @@ impl CameraWarp {
         // the lock kernel's own mask, before growing: what was detected
         enc.copy_buffer_to_buffer(&self.mask, 0, &stage, 0, bytes);
         gpu.queue.submit(Some(enc.finish()));
-        let rb = Readback::new(stage, Box::new(|d: &[u8]| bytemuck::cast_slice::<u8, f32>(d).to_vec()), None);
+        let rb = Readback::tracked(&stage, Box::new(|d: &[u8]| bytemuck::cast_slice::<u8, f32>(d).to_vec()), None);
         rb.block(gpu).unwrap_or_default()
     }
 }

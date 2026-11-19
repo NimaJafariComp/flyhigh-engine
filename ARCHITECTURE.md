@@ -311,12 +311,29 @@ that into `OptionInfo`; a field without a doc comment does not compile. `flyhigh
 needs the fast render, tensor cores need f16) are resolved there and the resolution is reported, not silent. Pacer
 options may change live (`set_options`); Session and Stream options rebuild the object.
 
-Each layer reports what it did: `engine.report()` (kernels compiled, autotune entries, tensor bytes),
+Each layer reports what it did: `engine.report()` (kernels compiled, autotune entries, memory),
 `session.report()` and `stream.report()` (sizes, slots, counters), `pacer.report()` (the display and source
 estimates, the plan with its clamp reason and warning, the factor, penalties and pressure, delay and lateness, the
 measured costs, the queue, the counters of presents and drops by cause). Counters are monotonic since creation; a
 host diffs them for rates. The `FH_*` developer variables ([docs/development.md](docs/development.md)) are for the
 CLI and the kernel builders only; library hosts set options through the API.
+
+`engine.report().memory` reports requested GPU bytes across all live sessions and streams sharing the engine.
+It gives live totals and lifetime high-water marks, both overall and for each category:
+
+- `tensors`: network and render buffers, including arena buffers counted once even when reused.
+- `initialized_buffers`: model weights, initialized network state and engine constants.
+- `cadence_scratch`: the separate re-timing composite buffers. The three video pair plans and their retained maps
+  are counted in the plan categories, so compare realtime, video, and video with cadence at the same settings.
+- `frame_textures`: input and output slots allocated by the engine.
+- `auxiliary_buffers`, `auxiliary_textures`: plan uniforms, classifier, camera warp, and tracked readbacks.
+
+Compare `live_bytes` before opening, during playback, and after dropping the stream and completing any pending
+calls. Resetting a stream keeps its allocations. `peak_bytes` is updated when an allocation is made, even if no
+report was read then. The total peak is not the sum of category peaks, which can occur at different times.
+`tensor_bytes` remains the cumulative allocation counter for compatibility. The report excludes imported and
+other host-owned resources, standalone diagnostic staging, driver padding and caches, and buffers retained only
+for GPU work in flight. It is not a measure of resident VRAM.
 
 Open: named presets across the layers, and a single report tree with `to_json()` instead of one per layer.
 

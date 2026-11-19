@@ -1,12 +1,12 @@
 //! `Step`: one dispatch or copy of a plan, its bind group and metadata; plan dumps for the golden tests.
 
+use crate::gpu::memory::{Buffer, Charge};
 use crate::{Gpu, Tensor};
 use std::rc::Rc;
-use wgpu::util::DeviceExt;
 
 pub enum Step {
     Compute { pipe: &'static str, bg: wgpu::BindGroup, groups: (u32, u32, u32), meta: Rc<StepMeta> },
-    Copy { src: Rc<wgpu::Buffer>, so: u64, dst: Rc<wgpu::Buffer>, dof: u64, size: u64 },
+    Copy { src: Rc<Buffer>, so: u64, dst: Rc<Buffer>, dof: u64, size: u64 },
 }
 pub type OpOutput = (Tensor, Vec<Step>);
 
@@ -15,6 +15,8 @@ pub type OpOutput = (Tensor, Vec<Step>);
 pub struct StepMeta {
     pub bindings: Vec<Binding>,
     pub params: Vec<u8>,
+    pub(crate) params_buffer: Option<Rc<Buffer>>,
+    _allocations: Vec<Rc<Charge>>,
 }
 pub enum Binding {
     Buffer(u64),
@@ -22,8 +24,18 @@ pub enum Binding {
     Sampler,
     Params,
 }
-pub(crate) fn meta(bindings: Vec<Binding>, params: &[u8]) -> Rc<StepMeta> {
-    Rc::new(StepMeta { bindings, params: params.to_vec() })
+pub(crate) fn meta<'a>(
+    bindings: Vec<Binding>,
+    params: &[u8],
+    buffers: impl IntoIterator<Item = &'a Buffer>,
+    params_buffer: Option<Rc<Buffer>>,
+) -> Rc<StepMeta> {
+    Rc::new(StepMeta {
+        bindings,
+        params: params.to_vec(),
+        params_buffer,
+        _allocations: buffers.into_iter().map(|b| b.charge.clone()).collect(),
+    })
 }
 /// One line per step: pipeline, workgroup counts, every binding (buffer size, texture size, sampler, the parameter
 /// uniform) and the parameter bytes as u32 words. The same plan always dumps the same text, so a dump is a golden.
@@ -75,17 +87,16 @@ impl Gpu {
     pub fn bind(
         &self,
         pipe: &'static str,
-        ins: &[&wgpu::Buffer],
+        ins: &[&Buffer],
         params: &[u8],
-        out: &wgpu::Buffer,
-        extra: &[&wgpu::Buffer],
+        out: &Buffer,
+        extra: &[&Buffer],
     ) -> (wgpu::BindGroup, Rc<StepMeta>) {
-        let pb = Rc::new(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let pb = Rc::new(self.buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("fh_params"),
             contents: params,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         }));
-        *self.last_pb.borrow_mut() = Some(pb.clone());
         let mut e: Vec<wgpu::BindGroupEntry> = ins
             .iter()
             .enumerate()
@@ -107,15 +118,15 @@ impl Gpu {
                 layout: &self.pipeline(pipe).get_bind_group_layout(0),
                 entries: &e,
             }),
-            meta(bindings, params),
+            meta(bindings, params, ins.iter().copied().chain([out]).chain(extra.iter().copied()), Some(pb)),
         )
     }
     pub fn compute_step(
         &self,
         pipe: &'static str,
-        ins: &[&wgpu::Buffer],
+        ins: &[&Buffer],
         params: &[u8],
-        out: &wgpu::Buffer,
+        out: &Buffer,
         groups: (u32, u32, u32),
     ) -> Step {
         let (bg, meta) = self.bind(pipe, ins, params, out, &[]);
@@ -124,10 +135,10 @@ impl Gpu {
     pub fn compute_step_ex(
         &self,
         pipe: &'static str,
-        ins: &[&wgpu::Buffer],
+        ins: &[&Buffer],
         params: &[u8],
-        out: &wgpu::Buffer,
-        extra: &[&wgpu::Buffer],
+        out: &Buffer,
+        extra: &[&Buffer],
         groups: (u32, u32, u32),
     ) -> Step {
         let (bg, meta) = self.bind(pipe, ins, params, out, extra);

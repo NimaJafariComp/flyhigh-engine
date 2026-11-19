@@ -1,6 +1,7 @@
 //! Graph to plan: the build context (caches, liveness, pinning), `build`, `build_network` and the pair / mid split.
 
 use crate::gmhs;
+use crate::gpu::memory::Buffer;
 use crate::model::graph::count_uses;
 use crate::model::graph::count_uses_unrolled;
 use crate::{
@@ -12,7 +13,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 // a buffer whose contents depend on the phase t (a `mul_t` scale uniform, the FiLM MLP output): `f(t)` gives the bytes
-pub type PhaseDep = (Rc<wgpu::Buffer>, Box<dyn Fn(f32) -> Vec<u8>>);
+pub type PhaseDep = (Rc<Buffer>, Box<dyn Fn(f32) -> Vec<u8>>);
 pub fn set_t(gpu: &Gpu, deps: &[PhaseDep], t: f32) {
     for (b, f) in deps {
         gpu.queue.write_buffer(b, 0, &f(t));
@@ -22,9 +23,9 @@ pub fn set_t(gpu: &Gpu, deps: &[PhaseDep], t: f32) {
 pub struct BuildCtx<'a> {
     pub gpu: &'a Gpu,
     pub blob: &'a Blob,
-    pub wcache: HashMap<String, Rc<wgpu::Buffer>>,
-    pub bcache: HashMap<String, (Rc<wgpu::Buffer>, u32, u32)>,
-    pub bcache4: HashMap<String, (Rc<wgpu::Buffer>, u32, u32, u32)>,
+    pub wcache: HashMap<String, Rc<Buffer>>,
+    pub bcache: HashMap<String, (Rc<Buffer>, u32, u32)>,
+    pub bcache4: HashMap<String, (Rc<Buffer>, u32, u32, u32)>,
     pub k: u32,
     pub t: f32,
     pub hs: u32,
@@ -34,12 +35,12 @@ pub struct BuildCtx<'a> {
     pub remaining: HashMap<String, usize>, // reads still to come in the UNROLLED plan (buffer liveness)
     // buffers never released to the arena (inputs, outputs, stage exports), by address; the Weak reserves the
     // address (see `Gpu::arena_ids`), otherwise a freed pinned buffer's address could pin an unrelated new one
-    pub pinned: HashMap<usize, std::rc::Weak<wgpu::Buffer>>,
-    pub t_deps: Vec<PhaseDep>, // t-dependent buffers of the plan (see `set_t`)
-    pub keep_all: bool,        // FH_ALL_OUTPUTS=1: also compute oracle-only outputs
-    pub cubic: bool,           // render_pix source sampler (NetOpts::cubic)
-    pub render_flags: u32,     // render_pix mode word (NetOpts::render_flags)
-    pub static_age: Option<(Rc<wgpu::Buffer>, u32)>, // static protection age and protecting age (NetOpts::keep_static)
+    pub pinned: HashMap<usize, std::rc::Weak<Buffer>>,
+    pub t_deps: Vec<PhaseDep>,                 // t-dependent buffers of the plan (see `set_t`)
+    pub keep_all: bool,                        // FH_ALL_OUTPUTS=1: also compute oracle-only outputs
+    pub cubic: bool,                           // render_pix source sampler (NetOpts::cubic)
+    pub render_flags: u32,                     // render_pix mode word (NetOpts::render_flags)
+    pub static_age: Option<(Rc<Buffer>, u32)>, // static protection age and protecting age (NetOpts::keep_static)
     pub discover: Option<Vec<ConvShape>>,
 } // Some: record conv shapes, pick fixed kernels (autotune discovery)
 
@@ -70,7 +71,7 @@ impl<'a> BuildCtx<'a> {
     pub fn pin(&mut self, t: &Tensor) {
         self.pinned.insert(Rc::as_ptr(&t.buf) as usize, Rc::downgrade(&t.buf));
     }
-    pub fn is_pinned(&self, b: &Rc<wgpu::Buffer>) -> bool {
+    pub fn is_pinned(&self, b: &Rc<Buffer>) -> bool {
         self.pinned.get(&(Rc::as_ptr(b) as usize)).is_some_and(|w| w.as_ptr() == Rc::as_ptr(b))
     }
     // one op has been built: its inputs were read. Drop names whose last read this was and hand dead buffers to the arena.
@@ -97,7 +98,7 @@ impl<'a> BuildCtx<'a> {
 }
 
 impl<'a> BuildCtx<'a> {
-    pub fn wb(&mut self, name: &str) -> Rc<wgpu::Buffer> {
+    pub fn wb(&mut self, name: &str) -> Rc<Buffer> {
         if let Some(b) = self.wcache.get(name) {
             return b.clone();
         }
@@ -105,7 +106,7 @@ impl<'a> BuildCtx<'a> {
         self.wcache.insert(name.to_string(), b.clone());
         b
     }
-    pub fn bbuf(&mut self, name: &str, cin: u32, cout: u32) -> (Rc<wgpu::Buffer>, u32, u32) {
+    pub fn bbuf(&mut self, name: &str, cin: u32, cout: u32) -> (Rc<Buffer>, u32, u32) {
         if let Some(b) = self.bcache.get(name) {
             return b.clone();
         }
@@ -113,7 +114,7 @@ impl<'a> BuildCtx<'a> {
         self.bcache.insert(name.to_string(), b.clone());
         b
     }
-    pub fn bbuf_tap(&mut self, name: &str, cin: u32, cout: u32) -> (Rc<wgpu::Buffer>, u32, u32, u32) {
+    pub fn bbuf_tap(&mut self, name: &str, cin: u32, cout: u32) -> (Rc<Buffer>, u32, u32, u32) {
         if let Some(b) = self.bcache4.get(name) {
             return b.clone();
         }
@@ -274,7 +275,8 @@ pub fn build(ops: &[Value], env: &mut HashMap<String, Tensor>, plan: &mut Vec<St
                 let f = if fwd { 2.0 * cx.t } else { 2.0 * (1.0 - cx.t) };
                 let x = t(env, 0);
                 let r = g.unary(&x, 0, f, 0.0);
-                let pb = g.last_pb.borrow_mut().take().expect("unary bind");
+                let Step::Compute { meta, .. } = &r.1[0] else { unreachable!("unary step") };
+                let pb = meta.params_buffer.as_ref().expect("unary bind").clone();
                 let p0 = UnaryParams { c: x.c, h: x.h, w: x.w, op: 0, a: f, b: 0.0, c0: x.c0, scale: x.scale };
                 cx.t_deps.push((
                     pb,

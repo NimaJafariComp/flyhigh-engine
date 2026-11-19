@@ -1,6 +1,7 @@
 //! `Engine`: the device the engine runs on, its compiled kernels and its autotune table (ARCHITECTURE.md). One per device;
 //! models and sessions share it. Create one, or bring the device an application already has.
 use crate::gpu::dxc::ShaderCompiler;
+use crate::gpu::memory::MemoryReport;
 use crate::{EngineOptions, Gpu};
 use anyhow::Result;
 use serde::Serialize;
@@ -41,6 +42,8 @@ pub struct EngineReport {
     pub tune_entries: usize,
     /// Bytes of tensor buffers created so far.
     pub tensor_bytes: u64,
+    /// Live and peak requested buffer and texture bytes. Not driver VRAM usage.
+    pub memory: MemoryReport,
 }
 
 pub struct Engine {
@@ -132,6 +135,7 @@ impl Engine {
             kernels_compiled: self.gpu.p.borrow().len(),
             tune_entries: self.gpu.tune.borrow().len(),
             tensor_bytes: self.gpu.alloc_bytes.get(),
+            memory: self.gpu.memory.report(),
         }
     }
 }
