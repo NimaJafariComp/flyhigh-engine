@@ -240,6 +240,10 @@ impl GenTex {
         };
         let mut sess = Vec::new();
         let mut resources = PlanResources::default();
+        // Every mid consumes the render before the next one, including the compositor's saved background.
+        if cadence {
+            resources.render = Some(gpu.alloc((3 * (opts.w.div_ceil(32) * 32) * (opts.h.div_ceil(32) * 32)) as usize));
+        }
         for _ in 0..n_sess {
             sess.push(SessionExt::new_with(
                 gpu,

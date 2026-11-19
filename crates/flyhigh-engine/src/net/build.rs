@@ -25,6 +25,7 @@ type PackKey = (String, u32, u32);
 #[derive(Default)]
 pub(crate) struct PlanResources {
     weights: Weights,
+    pub(crate) render: Option<Rc<Buffer>>,
 }
 
 #[derive(Default)]
@@ -38,6 +39,7 @@ pub struct BuildCtx<'a> {
     pub gpu: &'a Gpu,
     pub blob: &'a Blob,
     weights: Weights,
+    render_target: Option<Rc<Buffer>>,
     pub k: u32,
     pub t: f32,
     pub hs: u32,
@@ -62,6 +64,7 @@ impl<'a> BuildCtx<'a> {
             gpu,
             blob,
             weights: Weights::default(),
+            render_target: None,
             k,
             t,
             hs,
@@ -358,7 +361,7 @@ pub fn build(ops: &[Value], env: &mut HashMap<String, Tensor>, plan: &mut Vec<St
             "render_pix" => {
                 let (a, b, rt) = (mat(t(env, 0), plan), mat(t(env, 1), plan), mat(t(env, 4), plan));
                 let (ftq, vtq) = (t(env, 2), t(env, 3));
-                g.render_ex(
+                g.render_ex_to(
                     &RenderInputs { a: &a, b: &b, flow: &ftq, vis: &vtq, residual: &rt },
                     &RenderOpts {
                         fsx: ftq.scale,
@@ -367,6 +370,7 @@ pub fn build(ops: &[Value], env: &mut HashMap<String, Tensor>, plan: &mut Vec<St
                         flags: cx.render_flags,
                         static_age: cx.static_age.as_ref().map(|(b, n)| (&**b, *n)),
                     },
+                    cx.render_target.as_ref().filter(|_| outs[0] == "render"),
                 )
             } // flow_tq / vis_tq may be views
             "convex_upsample" => {
@@ -560,6 +564,7 @@ pub(crate) fn build_network_with(
     let mut env: HashMap<String, Tensor> = HashMap::new();
     let mut cx = BuildCtx::new(gpu, blob, k, t, ihp, iwp);
     cx.weights = std::mem::take(&mut resources.weights);
+    cx.render_target = resources.render.clone();
     cx.cubic = net.cubic;
     cx.render_flags = net.render_flags();
     cx.pin(a);
@@ -703,7 +708,7 @@ pub(crate) fn build_network_with(
         let (rt, s) = gpu.mat(&env[&ins[4]]);
         tail.extend(s);
         let (fsx, fsy) = (ftq.scale * wp as f32 / iwp as f32, ftq.scale * hp as f32 / ihp as f32);
-        let (o, s) = gpu.render_ex(
+        let (o, s) = gpu.render_ex_to(
             &RenderInputs { a, b, flow: &ftq, vis: &vtq, residual: &rt },
             &RenderOpts {
                 fsx,
@@ -712,6 +717,7 @@ pub(crate) fn build_network_with(
                 flags: net.render_flags(),
                 static_age: static_age.as_deref().map(|b| (b, static_frames)),
             },
+            cx.render_target.as_ref(),
         );
         tail.extend(s);
         cx.pin(&o);
