@@ -103,6 +103,7 @@ impl Drop for Charge {
 }
 
 /// An engine buffer. Dereferences to the underlying wgpu buffer for copies and bindings.
+#[derive(Clone)]
 pub struct Buffer {
     raw: wgpu::Buffer,
     // Plan steps share this charge without changing the arena's Rc<Buffer> liveness checks.

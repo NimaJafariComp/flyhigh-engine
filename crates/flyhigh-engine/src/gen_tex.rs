@@ -244,20 +244,39 @@ impl GenTex {
         if cadence {
             resources.render = Some(gpu.alloc((3 * (opts.w.div_ceil(32) * 32) * (opts.h.div_ceil(32) * 32)) as usize));
         }
-        for _ in 0..n_sess {
-            sess.push(SessionExt::new_with(
-                gpu,
-                blob,
-                ops,
-                opts.w,
-                opts.h,
-                opts.k,
-                opts.iw,
-                opts.ih,
-                tune,
-                &net,
-                &mut resources,
-            ));
+        let can_share_workspace = cadence && std::env::var_os("FH_NO_ARENA").is_none();
+        let mut warmed_tune = None;
+        for attempt in 0..3 {
+            resources.workspace = (can_share_workspace && attempt < 2).then(Default::default);
+            resources.layout_mismatch = false;
+            for _ in 0..n_sess {
+                sess.push(SessionExt::new_with(
+                    gpu,
+                    blob,
+                    ops,
+                    opts.w,
+                    opts.h,
+                    opts.k,
+                    opts.iw,
+                    opts.ih,
+                    warmed_tune.as_ref().or(tune),
+                    &net,
+                    &mut resources,
+                ));
+                if resources.layout_mismatch {
+                    break;
+                }
+            }
+            if !resources.layout_mismatch {
+                break;
+            }
+            // Cold native autotune can change the allocation trace. Retry with those choices, otherwise keep private arenas.
+            sess.clear();
+            if attempt == 0 {
+                let mut choices = gpu.tune.borrow().clone();
+                choices.extend(tune.into_iter().flatten().map(|(k, v)| (*k, *v)));
+                warmed_tune = Some(choices);
+            }
         }
         let scratch = if cadence {
             Some(CadenceScratch::new(gpu, &sess[0]).context("cadence: GMHS maps missing")?)

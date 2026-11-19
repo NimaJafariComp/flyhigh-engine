@@ -1,6 +1,7 @@
 //! Graph to plan: the build context (caches, liveness, pinning), `build`, `build_network` and the pair / mid split.
 
 use crate::gmhs;
+use crate::gpu::alloc::Workspace;
 use crate::gpu::memory::Buffer;
 use crate::model::graph::count_uses;
 use crate::model::graph::count_uses_unrolled;
@@ -9,7 +10,7 @@ use crate::{
     RenderOpts, StaticParams, Step, Tensor, TuneTable, UnaryParams,
 };
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 // a buffer whose contents depend on the phase t (a `mul_t` scale uniform, the FiLM MLP output): `f(t)` gives the bytes
@@ -26,6 +27,8 @@ type PackKey = (String, u32, u32);
 pub(crate) struct PlanResources {
     weights: Weights,
     pub(crate) render: Option<Rc<Buffer>>,
+    pub(crate) workspace: Option<Workspace>,
+    pub(crate) layout_mismatch: bool,
 }
 
 #[derive(Default)]
@@ -561,6 +564,7 @@ pub(crate) fn build_network_with(
     // buffers, so stale ids let a buffer that never came from the arena enter the free list (which also made the plan's
     // buffer assignment depend on allocator luck)
     gpu.arena_ids.borrow_mut().clear();
+    let workspace_was = gpu.workspace.replace(resources.workspace.take());
     let mut env: HashMap<String, Tensor> = HashMap::new();
     let mut cx = BuildCtx::new(gpu, blob, k, t, ihp, iwp);
     cx.weights = std::mem::take(&mut resources.weights);
@@ -655,6 +659,14 @@ pub(crate) fn build_network_with(
             }),
         }
     }
+    let (pair_live, pair_used): (HashSet<_>, HashSet<_>) = if gpu.workspace.borrow().is_some() {
+        (
+            env.values().map(|t| Rc::as_ptr(&t.buf.charge)).collect(),
+            plan.iter().flat_map(Step::allocations).map(Rc::as_ptr).collect(),
+        )
+    } else {
+        Default::default()
+    };
     #[cfg(test)]
     let (retained, pair_buffers) = if net.keep_maps && std::env::var_os("FH_CADENCE_DIAGNOSTICS").is_some() {
         let retained = env
@@ -699,6 +711,7 @@ pub(crate) fn build_network_with(
         *gpu.arena.borrow_mut() = arena_was;
         gpu.arena_ids.borrow_mut().clear();
         let r = env["render"].clone();
+        resources.workspace = gpu.workspace.replace(workspace_was);
         resources.weights = cx.weights;
         return (r, env, cx.t_deps);
     }
@@ -734,6 +747,15 @@ pub(crate) fn build_network_with(
             &r.buf,
             workgroups_2d(wp, hp, 1),
         ));
+    }
+    resources.workspace = gpu.workspace.replace(workspace_was);
+    if let Some(workspace) = resources.workspace.as_mut() {
+        // Only data that crosses the pair/mid boundary or feeds the GMHS stats/composite must remain pair-local.
+        let mid: HashSet<_> = tail.iter().flat_map(Step::allocations).map(Rc::as_ptr).collect();
+        let mut retained: HashSet<_> = pair_live.intersection(&mid).copied().collect();
+        retained.extend(env.get("gm_maps").map(|m| Rc::as_ptr(&m.buf.charge)));
+        let used = mid.into_iter().chain(pair_used).collect();
+        resources.layout_mismatch = !workspace.finish(&retained, &used);
     }
     #[cfg(test)]
     if !retained.is_empty() {

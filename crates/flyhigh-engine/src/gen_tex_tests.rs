@@ -211,9 +211,12 @@ fn cadence_shares_transient_inference_buffers_but_keeps_pair_data() {
     let gen = anime(&engine(), W, H);
     let (a, b) = (&gen.sess[0], &gen.sess[1]);
     let temps = |s: &SessionExt| {
-        s.plan_mid.iter().flat_map(Step::allocations)
+        s.plan_mid
+            .iter()
+            .flat_map(Step::allocations)
             .filter(|c| c.is_tensor() && !std::rc::Rc::ptr_eq(c, &s.render.buf.charge))
-            .map(std::rc::Rc::as_ptr).collect::<std::collections::HashSet<_>>()
+            .map(std::rc::Rc::as_ptr)
+            .collect::<std::collections::HashSet<_>>()
     };
     if std::env::var_os("FH_NO_ARENA").is_none() {
         assert!(temps(a).intersection(&temps(b)).count() > 5, "mid kernels reuse one workspace");
