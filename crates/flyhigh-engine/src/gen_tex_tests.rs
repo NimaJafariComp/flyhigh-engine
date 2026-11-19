@@ -236,3 +236,51 @@ fn cadence_shares_transient_inference_buffers_but_keeps_pair_data() {
     assert!(!std::rc::Rc::ptr_eq(&a.a.buf.charge, &b.a.buf.charge));
     assert!(!std::rc::Rc::ptr_eq(&a.b.buf.charge, &b.b.buf.charge));
 }
+
+#[test]
+#[ignore = "requires a GPU"]
+fn cadence_readbacks_follow_their_pair_and_reset_generation() {
+    let e = engine();
+    let gpu = &e.gpu;
+    let mut generator = anime(&e, W, H);
+    for _ in 0..4 {
+        generator.add_input(gpu);
+    }
+    let cel_a = cel(0, 0, false);
+    let cut = cel(0, 0, true);
+    let push = |g: &mut GenTex, slot, data| {
+        write(gpu, g, slot, data);
+        g.push_slot(gpu, slot).unwrap();
+    };
+    let poll = || gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+
+    push(&mut generator, 0, &cel_a);
+    push(&mut generator, 1, &cut);
+    let older_cut = generator.take_stats().unwrap();
+    push(&mut generator, 2, &cut);
+    generator.resolve_stats(gpu).unwrap();
+    poll();
+    generator.set_stats(pollster::block_on(older_cut.finish()).unwrap());
+    assert!(generator.stats()[1].cut && !generator.stats()[2].cut, "a late cut belongs to its older interval");
+
+    for reset in [true, false] {
+        generator.reset_history();
+        push(&mut generator, 0, &cel_a);
+        push(&mut generator, 1, &cut);
+        let discarded_cut = generator.take_stats().unwrap();
+        if reset {
+            generator.reset_history();
+            push(&mut generator, 0, &cut);
+            push(&mut generator, 1, &cut);
+        } else {
+            for i in 0..=HIST {
+                push(&mut generator, (i + 2) % 4, &cut);
+                generator.resolve_stats(gpu).unwrap();
+            }
+        }
+        generator.resolve_stats(gpu).unwrap();
+        poll();
+        generator.set_stats(pollster::block_on(discarded_cut.finish()).unwrap());
+        assert!(generator.stats().iter().all(|s| !s.cut), "seek and evicted intervals must discard stale cuts");
+    }
+}
