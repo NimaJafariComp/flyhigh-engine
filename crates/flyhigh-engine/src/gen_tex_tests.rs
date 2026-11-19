@@ -25,7 +25,7 @@ fn cel(draw: u32, pan: u32, cut: bool) -> Vec<u8> {
         for x in 0..W {
             let bx = x + pan;
             let wall = (bx / 17 + y / 23) % 3;
-            let ink = if (bx % 17 == 0) || (y % 23 == 0) { 12 } else { 52 + wall as u8 * 23 };
+            let ink = if bx.is_multiple_of(17) || y.is_multiple_of(23) { 12 } else { 52 + wall as u8 * 23 };
             let cx = 75 + ((draw % 4) * 31) as i32;
             let dx = (x as i32 - cx).abs();
             let px = if cut {
@@ -217,7 +217,9 @@ fn video_plans_share_immutable_convolution_weights() {
 #[test]
 #[ignore = "requires a GPU"]
 fn cadence_shares_transient_inference_buffers_but_keeps_pair_data() {
-    let gen = anime(&engine(), W, H);
+    let e = engine();
+    let gen = anime(&e, W, H);
+    let other = anime(&e, W, H);
     let (a, b) = (&gen.sess[0], &gen.sess[1]);
     let temps = |s: &SessionExt| {
         s.plan_mid
@@ -230,6 +232,7 @@ fn cadence_shares_transient_inference_buffers_but_keeps_pair_data() {
     if std::env::var_os("FH_NO_ARENA").is_none() {
         assert!(temps(a).intersection(&temps(b)).count() > 5, "mid kernels reuse one workspace");
     }
+    assert!(temps(a).is_disjoint(&temps(&other.sess[0])), "independent streams never alias workspace");
     for field in ["gm_maps", "static:state", "mask"] {
         assert!(!std::rc::Rc::ptr_eq(&a.env[field].buf.charge, &b.env[field].buf.charge));
     }

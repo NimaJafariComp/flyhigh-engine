@@ -8,8 +8,7 @@
 //!   slot of the interval is then synthesised too (`generate(0.0, out)` returns true) and the host must present that
 //!   output instead of its source frame.
 //!
-//! Statistics come back through an async readback (`StatsRun`): native hosts block on it inside `push_slot`, the
-//! browser host awaits the promise of `fh_vid_stats` before the first `generate` of the interval (the lookahead hides it).
+//! Statistics come back through a tagged async readback. Hosts resolve it before the interval's first `generate`.
 use crate::gmhs::{CadenceScratch, PairStats, StatsRun};
 use crate::gpu::memory::Charge;
 use crate::net::build::PlanResources;
@@ -17,6 +16,7 @@ use crate::{gmhs, Blob, Gpu, NetOpts, SessionExt, Step, TimedRun};
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::VecDeque;
+use std::rc::Rc;
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "gen_tex_tests.rs"]
@@ -111,9 +111,33 @@ pub struct GenTex {
     scratch: Option<CadenceScratch>,
     slots: Vec<usize>, // last pushed input slots, newest last (<= 3)
     n_pushed: u64,
-    pending: Option<StatsRun>, // statistics of the newest pair, not yet read back
+    pending: Option<PendingPairStats>,
+    generation: Rc<()>,
     hist: VecDeque<PairStats>, // per-pair statistics, oldest first; back = the "next" pair (lookahead)
     half_done: bool,           // linear_t: the t = 0.5 maps of the current pair are computed
+}
+
+struct PairKey {
+    generation: Rc<()>,
+    sequence: u64,
+}
+
+/// In-flight readback for one cadence pair. Finish it before passing it back to the stream.
+pub struct PendingPairStats {
+    key: PairKey,
+    run: StatsRun,
+}
+
+/// Completed statistics bound to their original stream generation and pair.
+pub struct FinishedPairStats {
+    key: PairKey,
+    stats: PairStats,
+}
+
+impl PendingPairStats {
+    pub async fn finish(self) -> Result<FinishedPairStats> {
+        Ok(FinishedPairStats { key: self.key, stats: self.run.finish().await? })
+    }
 }
 
 /// What the host can do after a push.
@@ -295,6 +319,7 @@ impl GenTex {
             slots: Vec::new(),
             n_pushed: 0,
             pending: None,
+            generation: Rc::new(()),
             hist: VecDeque::new(),
             half_done: false,
         })
@@ -351,6 +376,7 @@ impl GenTex {
         self.n_pushed = 0;
         self.stats = [PairStats::default(); 3];
         self.pending = None;
+        self.generation = Rc::new(());
         self.hist.clear();
     }
     pub fn stats(&self) -> [PairStats; 3] {
@@ -402,7 +428,9 @@ impl GenTex {
                     self.hist.pop_front();
                 }
                 if let Some(sc) = &self.scratch {
-                    self.pending = Some(gmhs::pair_stats_begin(gpu, &self.sess[sn], sc)?);
+                    let key = PairKey { generation: self.generation.clone(), sequence: self.n_pushed };
+                    self.pending =
+                        Some(PendingPairStats { key, run: gmhs::pair_stats_begin(gpu, &self.sess[sn], sc)? });
                 }
                 let ready = self.slots.len() >= 3;
                 Ok((PushInfo { ready, base_slot: if ready { self.slots[0] } else { slot }, real_replaced: false }, run))
@@ -410,16 +438,26 @@ impl GenTex {
         }
     }
     /// Take the pending statistics readback (Video + cadence); the caller awaits `finish` and passes the result to `set_stats`.
-    pub fn take_stats(&mut self) -> Option<StatsRun> {
+    pub fn take_stats(&mut self) -> Option<PendingPairStats> {
         self.pending.take()
     }
     pub fn has_pending_stats(&self) -> bool {
         self.pending.is_some()
     }
-    pub fn set_stats(&mut self, st: PairStats) {
-        self.stats[2] = st;
-        if let Some(b) = self.hist.back_mut() {
-            *b = st;
+    /// Ignore completions from another generation or a pair that has left history.
+    pub fn set_stats(&mut self, st: FinishedPairStats) {
+        if !Rc::ptr_eq(&st.key.generation, &self.generation) {
+            return;
+        }
+        let Some(age) = self.n_pushed.checked_sub(st.key.sequence) else { return };
+        if age >= self.hist.len() as u64 {
+            return;
+        }
+        let i = self.hist.len() - 1 - age as usize;
+        self.hist[i] = st.stats;
+        if age < self.stats.len() as u64 {
+            let i = self.stats.len() - 1 - age as usize;
+            self.stats[i] = st.stats;
         }
     }
     /// Native convenience: block for the pending statistics.
