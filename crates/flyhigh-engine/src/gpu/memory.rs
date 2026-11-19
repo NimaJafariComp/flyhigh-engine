@@ -84,6 +84,13 @@ pub(crate) struct Charge {
     pub(crate) bytes: u64,
 }
 
+#[cfg(test)]
+impl Charge {
+    pub(crate) fn is_tensor(&self) -> bool {
+        matches!(self.kind, Kind::Tensors)
+    }
+}
+
 impl Drop for Charge {
     fn drop(&mut self) {
         let state = &self.memory.0;

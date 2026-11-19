@@ -204,3 +204,23 @@ fn video_plans_share_immutable_convolution_weights() {
         .collect();
     assert!(first_conv_weights.iter().all(|w| std::rc::Rc::ptr_eq(w, &first_conv_weights[0])));
 }
+
+#[test]
+#[ignore = "requires a GPU"]
+fn cadence_shares_transient_inference_buffers_but_keeps_pair_data() {
+    let gen = anime(&engine(), W, H);
+    let (a, b) = (&gen.sess[0], &gen.sess[1]);
+    let temps = |s: &SessionExt| {
+        s.plan_mid.iter().flat_map(Step::allocations)
+            .filter(|c| c.is_tensor() && !std::rc::Rc::ptr_eq(c, &s.render.buf.charge))
+            .map(std::rc::Rc::as_ptr).collect::<std::collections::HashSet<_>>()
+    };
+    if std::env::var_os("FH_NO_ARENA").is_none() {
+        assert!(temps(a).intersection(&temps(b)).count() > 5, "mid kernels reuse one workspace");
+    }
+    for field in ["gm_maps", "static:state", "mask"] {
+        assert!(!std::rc::Rc::ptr_eq(&a.env[field].buf.charge, &b.env[field].buf.charge));
+    }
+    assert!(!std::rc::Rc::ptr_eq(&a.a.buf.charge, &b.a.buf.charge));
+    assert!(!std::rc::Rc::ptr_eq(&a.b.buf.charge, &b.b.buf.charge));
+}
