@@ -617,6 +617,20 @@ pub fn build_network_ex(
             }),
         }
     }
+    #[cfg(test)]
+    let (retained, pair_buffers) = if net.keep_maps && std::env::var_os("FH_CADENCE_DIAGNOSTICS").is_some() {
+        let retained = env
+            .values()
+            .map(|t| &t.buf)
+            .chain([&a.buf, &b.buf])
+            .chain(static_age.iter())
+            .map(|b| Rc::as_ptr(&b.charge))
+            .collect::<std::collections::HashSet<_>>();
+        let pair = plan.iter().flat_map(Step::allocations).map(|a| (Rc::as_ptr(a), a.bytes)).collect::<HashMap<_, _>>();
+        (retained, pair)
+    } else {
+        Default::default()
+    };
     let tail: &mut Vec<Step> = match plan_mid {
         Some(pm) => {
             for v in env.values() {
@@ -680,6 +694,31 @@ pub fn build_network_ex(
             &r.buf,
             workgroups_2d(wp, hp, 1),
         ));
+    }
+    #[cfg(test)]
+    if !retained.is_empty() {
+        let weights = cx
+            .wcache
+            .values()
+            .chain(cx.bcache.values().map(|b| &b.0))
+            .chain(cx.bcache4.values().map(|b| &b.0))
+            .map(|b| Rc::as_ptr(&b.charge))
+            .collect::<std::collections::HashSet<_>>();
+        let mut bytes = pair_buffers;
+        bytes.extend(tail.iter().flat_map(Step::allocations).map(|a| (Rc::as_ptr(a), a.bytes)));
+        bytes.remove(&Rc::as_ptr(&gpu.zero.charge));
+        bytes.remove(&Rc::as_ptr(&gpu.ones.charge));
+        let (mut w, mut r, mut tmp) = (0, 0, 0);
+        for (id, size) in bytes {
+            if weights.contains(&id) {
+                w += size;
+            } else if retained.contains(&id) {
+                r += size;
+            } else {
+                tmp += size;
+            }
+        }
+        eprintln!("plan {wp}x{hp}: weights={w}, retained={r}, workspace={tmp}");
     }
     gpu.remember_tune(&cx.tune);
     *gpu.arena.borrow_mut() = arena_was; // released scratch that nobody took is dropped here (VRAM freed)

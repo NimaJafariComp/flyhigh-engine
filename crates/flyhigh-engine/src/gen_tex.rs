@@ -17,6 +17,10 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::VecDeque;
 
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "gen_tex_tests.rs"]
+mod tests;
+
 /// Still shot: some pair of the window changed less than this share of cells (held drawing, maybe with twinkling
 /// effects); a camera move changes most of the frame in every pair.
 const STILL_MAX: f32 = 0.01;
