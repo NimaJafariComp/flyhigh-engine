@@ -159,6 +159,7 @@ fn cadence_1080p_memory() {
     let core = crate::Engine::from_shared(e.gpu.clone());
     let before = core.report().memory;
     let mut gen = anime(&e, 1920, 1080);
+    assert_render_shared(&gen);
     for _ in 0..4 {
         gen.add_input(&e.gpu);
     }
@@ -169,6 +170,16 @@ fn cadence_1080p_memory() {
     eprintln!("1080p cadence memory: {}", serde_json::to_string(&active).unwrap());
     drop(gen);
     assert_eq!(core.report().memory.live_bytes, before.live_bytes);
+}
+
+fn assert_render_shared(gen: &GenTex) {
+    assert!(gen.sess.iter().all(|s| std::rc::Rc::ptr_eq(&s.render.buf, &gen.sess[0].render.buf)));
+}
+
+#[test]
+#[ignore = "requires a GPU"]
+fn cadence_shares_render_at_native_resolution() {
+    assert_render_shared(&anime(&engine(), W, H));
 }
 
 #[test]
