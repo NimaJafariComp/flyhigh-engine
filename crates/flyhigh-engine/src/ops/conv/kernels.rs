@@ -1,5 +1,6 @@
 //! The conv kernels: naive, cooperative-matrix (tensor cores), portable tiled FMA with split-K, direct.
 
+use crate::gpu::memory::Buffer;
 use crate::{workgroups_2d, ConvParams, Gpu, ImplicitGemmParams, OpOutput, ShiftParams, SplitKParams, Step, Tensor};
 use std::rc::Rc;
 
@@ -9,9 +10,9 @@ use std::rc::Rc;
 #[derive(Clone, Copy)]
 pub struct ConvArgs<'a> {
     pub x: &'a Tensor,
-    pub weights: &'a wgpu::Buffer,
-    pub bias: &'a wgpu::Buffer,
-    pub slope: &'a wgpu::Buffer,
+    pub weights: &'a Buffer,
+    pub bias: &'a Buffer,
+    pub slope: &'a Buffer,
     pub cin: u32,
     pub cout: u32,
     pub kp: u32,
@@ -62,7 +63,7 @@ impl Gpu {
 impl Gpu {
     /// Pack torch `[cout][cin][3][3]` weights as the implicit-GEMM B matrix `[kp][np]` (ci-major K padded to 16, N padded
     /// to 32 or 64); returns the buffer and the paddings.
-    pub fn buildb(&self, wf: &[f32], cin: u32, cout: u32) -> (Rc<wgpu::Buffer>, u32, u32) {
+    pub fn buildb(&self, wf: &[f32], cin: u32, cout: u32) -> (Rc<Buffer>, u32, u32) {
         let k = cin * 9;
         let kp = k.div_ceil(16) * 16;
         let nblk = if cout <= 32 { 32 } else { 64 };
@@ -129,7 +130,7 @@ impl Gpu {
         debug_assert!(res.is_none_or(|r| r.is_plain() && r.c == cout && r.h == hout && r.w == wout));
         // dummy for the unused residual must differ from the `part` dummy: one buffer cannot be bound read-only and
         // read-write in the same bind group
-        let resb: &wgpu::Buffer = res.map(|r| &*r.buf).unwrap_or(&self.ones);
+        let resb: &Buffer = res.map(|r| &*r.buf).unwrap_or(&self.ones);
         let res_on = res.is_some() as u32;
         let (ker, tm, tn) = if cout <= 32 {
             (
@@ -190,7 +191,7 @@ impl Gpu {
     }
     /// Pack weights tap-major for the direct kernels: kcol = tap * cinp + ci with cinp = ceil16(cin), so a 16-wide K
     /// block never straddles a (ky, kx) tap; N padded to the 64-channel tile. Returns the buffer, kp, np and cinp.
-    pub fn buildb_tap(&self, wf: &[f32], cin: u32, cout: u32) -> (Rc<wgpu::Buffer>, u32, u32, u32) {
+    pub fn buildb_tap(&self, wf: &[f32], cin: u32, cout: u32) -> (Rc<Buffer>, u32, u32, u32) {
         let cinp = cin.div_ceil(16) * 16;
         let kp = 9 * cinp;
         let np = cout.div_ceil(64) * 64;
@@ -222,7 +223,7 @@ impl Gpu {
     }
     // three x-shifted, y-padded copies of x ([3][cinp][h+2][w]) for the direct conv kernel; the kernel writes the
     // padding too (arena buffers are not zeroed)
-    pub fn xshift3(&self, x: &Tensor, cinp: u32) -> (Rc<wgpu::Buffer>, Step) {
+    pub fn xshift3(&self, x: &Tensor, cinp: u32) -> (Rc<Buffer>, Step) {
         let out = self.alloc((3 * cinp * (x.h + 2) * x.w) as usize);
         self.note_scratch(&out);
         let sp = ShiftParams { cin: x.c, cinp, h: x.h, w: x.w };

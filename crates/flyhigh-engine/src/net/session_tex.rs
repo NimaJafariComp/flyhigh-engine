@@ -1,5 +1,6 @@
 //! `SessionTex`: the two-texture ping-pong session of the browser canvas path.
 
+use crate::gpu::memory::Charge;
 use crate::{build_network, clone_step, Blob, Gpu, NetOpts, Step, Tensor, TuneTable};
 use serde_json::Value;
 
@@ -23,6 +24,7 @@ pub struct SessionTex {
     pub plan: Vec<Step>,
     pub render: Tensor,
     in_steps: [[Step; 2]; 2],
+    _owned_slots: [Charge; 2],
 } // [texture][0 = as A, 1 = as B]: built once, the ping-pong only swaps them
 impl SessionTex {
     #[allow(clippy::too_many_arguments)] // the Core `Session` is the public constructor; the tools and the plan tests call this
@@ -41,6 +43,7 @@ impl SessionTex {
     ) -> SessionTex {
         let (hp, wp) = (h.div_ceil(32) * 32, w.div_ceil(32) * 32);
         let tex = [gpu.input_texture(w, h), gpu.input_texture(w, h)];
+        let owned_slots = [&tex[0], &tex[1]].map(|t| gpu.memory.rgba8_slot(t));
         let view = [
             tex[0].create_view(&wgpu::TextureViewDescriptor::default()),
             tex[1].create_view(&wgpu::TextureViewDescriptor::default()),
@@ -66,6 +69,7 @@ impl SessionTex {
             plan,
             render,
             in_steps,
+            _owned_slots: owned_slots,
         }
     }
     // the texture to fill with the newest frame; call `commit()` after copying into it

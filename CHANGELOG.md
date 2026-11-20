@@ -5,6 +5,11 @@ follow semantic versioning as described in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## [Unreleased]
 
+### Added
+
+- Engine reports include live and peak GPU allocation bytes, with separate totals for frame slots, network buffers,
+  cadence scratch, and auxiliary resources.
+
 ## [0.5.0] - 2026-11-18
 
 ### Added

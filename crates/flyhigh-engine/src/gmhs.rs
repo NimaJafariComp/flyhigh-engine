@@ -13,6 +13,7 @@
 //! The same maps feed cadence smoothing (`api::Mode::Video`): the displacement-difference channel is the motion of
 //! an element against the global motion, which classifies a pair as a jump / hold of an element animated on 2s and
 //! gives the mask for the re-timed composite (`pair_stats`, `composite_frame`).
+use crate::gpu::memory::Buffer;
 use crate::{clone_step, workgroups_2d, Gpu, SessionExt, Step, Tensor};
 use bytemuck::{Pod, Zeroable};
 use std::cell::RefCell;
@@ -240,13 +241,13 @@ pub const CHANGE_THR: f32 = 0.02;
 /// Buffers for the re-timed composite, sized for one session's frame size, and the cadence steps built from them
 /// (cached: their uniforms never change, and building one allocates GPU objects).
 pub struct CadenceScratch {
-    pub bg_copy: Rc<wgpu::Buffer>,
-    pub mask_a: Rc<wgpu::Buffer>,
-    pub mask_b: Rc<wgpu::Buffer>,
-    pub trust_a: Rc<wgpu::Buffer>,
-    pub trust_b: Rc<wgpu::Buffer>,
+    pub bg_copy: Rc<Buffer>,
+    pub mask_a: Rc<Buffer>,
+    pub mask_b: Rc<Buffer>,
+    pub trust_a: Rc<Buffer>,
+    pub trust_b: Rc<Buffer>,
     pub out: Tensor,
-    pub part: Rc<wgpu::Buffer>,
+    pub part: Rc<Buffer>,
     steps: RefCell<HashMap<(u8, usize, usize), Vec<Step>>>,
 }
 pub const STAT_WG: u32 = 32;
@@ -267,15 +268,16 @@ impl CadenceScratch {
         let (m, _, _) = maps_of(sess)?;
         let r = &sess.render;
         let n = (r.c * r.h * r.w) as usize;
-        let out = Tensor { buf: gpu.alloc(n), c: r.c, h: r.h, w: r.w, c0: 0, scale: 1.0 };
+        let out =
+            Tensor { buf: gpu.alloc_cadence((n * gpu.esize()) as u64), c: r.c, h: r.h, w: r.w, c0: 0, scale: 1.0 };
         Some(CadenceScratch {
-            bg_copy: gpu.alloc(n),
-            mask_a: gpu.alloc_f32((m.h * m.w) as usize),
-            mask_b: gpu.alloc_f32((m.h * m.w) as usize),
-            trust_a: gpu.alloc_f32((m.h * m.w) as usize),
-            trust_b: gpu.alloc_f32((m.h * m.w) as usize),
+            bg_copy: gpu.alloc_cadence((n * gpu.esize()) as u64),
+            mask_a: gpu.alloc_cadence(u64::from(m.h * m.w) * 4),
+            mask_b: gpu.alloc_cadence(u64::from(m.h * m.w) * 4),
+            trust_a: gpu.alloc_cadence(u64::from(m.h * m.w) * 4),
+            trust_b: gpu.alloc_cadence(u64::from(m.h * m.w) * 4),
             out,
-            part: gpu.alloc_f32((STAT_WG * 4) as usize),
+            part: gpu.alloc_cadence(u64::from(STAT_WG * 4 * 4)),
             steps: RefCell::new(HashMap::new()),
         })
     }
@@ -288,7 +290,7 @@ impl CadenceScratch {
 /// A submitted statistics reduction whose 64-float readback is still in flight (`finish` awaits the mapping; on
 /// native poll the device first, in the browser the mapAsync promise resolves it).
 pub struct StatsRun {
-    stage: wgpu::Buffer,
+    stage: Buffer,
     fut: crate::MapWait,
     s: f32,
     n: u32,
@@ -329,7 +331,7 @@ pub fn pair_stats_begin(gpu: &Gpu, sess: &SessionExt, sc: &CadenceScratch) -> an
         vec![gpu.compute_step("gm_stats", &[&m.buf], bytemuck::bytes_of(&p), &sc.part, (STAT_WG, 1, 1))]
     });
     gpu.replay(&st);
-    let stage = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+    let stage = gpu.buffer(&wgpu::BufferDescriptor {
         label: Some("fh_gm_stats"),
         size: (STAT_WG * 4 * 4) as u64,
         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,

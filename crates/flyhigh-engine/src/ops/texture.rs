@@ -2,13 +2,12 @@
 
 use crate::ops::step::meta;
 use crate::{workgroups_2d, Binding, Gpu, RgbaParams, Step, Tensor};
-use wgpu::util::DeviceExt;
 
 impl Gpu {
     // texture-input step: rgba8unorm texture view -> padded f16 CHW tensor
     pub fn tex_in_step(&self, view: &wgpu::TextureView, dst: &Tensor, w: u32, h: u32) -> Step {
         let rp = RgbaParams { w, h, wp: dst.w, hp: dst.h };
-        let pb = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let pb = self.buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("fh_tex_in_params"),
             contents: bytemuck::bytes_of(&rp),
             usage: wgpu::BufferUsages::UNIFORM,
@@ -29,6 +28,8 @@ impl Gpu {
             meta: meta(
                 vec![Binding::Texture(w, h), Binding::Buffer(dst.buf.size()), Binding::Params],
                 bytemuck::bytes_of(&rp),
+                [&*dst.buf, &pb],
+                None,
             ),
         }
     }
@@ -36,7 +37,7 @@ impl Gpu {
     pub fn tex_out_step(&self, src: &Tensor, view: &wgpu::TextureView, w: u32, h: u32, bgra: bool) -> Step {
         let pipe: &'static str = if bgra { "tex_out_bgra" } else { "tex_out" };
         let rp = RgbaParams { w, h, wp: src.w, hp: src.h };
-        let pb = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let pb = self.buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("fh_tex_out_params"),
             contents: bytemuck::bytes_of(&rp),
             usage: wgpu::BufferUsages::UNIFORM,
@@ -57,6 +58,8 @@ impl Gpu {
             meta: meta(
                 vec![Binding::Buffer(src.buf.size()), Binding::Texture(w, h), Binding::Params],
                 bytemuck::bytes_of(&rp),
+                [&*src.buf, &pb],
+                None,
             ),
         }
     }

@@ -33,13 +33,17 @@ console.log(engine.info(), model.info());                            // { name, 
 |---|---|
 | `await FhEngine.create(options)` | the device; `{ precision: 'auto' \| 'f16' \| 'f32', tensorCores, autotune }` |
 | `engine.device()` | the `GPUDevice` |
-| `engine.info()`, `engine.report()` | the device, its kernel class, timestamp queries; kernels compiled so far, autotune entries, tensor bytes |
+| `engine.info()`, `engine.report()` | the device, its kernel class, timestamp queries; kernels compiled, autotune entries, cumulative `tensor_bytes`, and live and peak allocation bytes in [`memory`](../ARCHITECTURE.md#options-and-reports) |
 | `engine.kernelSource(name)` | `{ code, entry }`, the WGSL and entry point of a kernel exactly as this device compiles it (null for an unknown name). Pass every name you will `precompile` to `device.createComputePipelineAsync({ layout: 'auto', compute: { module: device.createShaderModule({ code }), entryPoint: entry } })` at once, and await them all: the browser compiles them in parallel off the compositing thread (a cold site: about 0.5 s instead of about 2 s), and `precompile` / `stream` then find them in its cache |
 | `engine.compiledKernels()`, `engine.precompile(names)` | the kernels compiled so far, and compiling named ones ahead of `stream` (unknown names skipped; returns how many it compiled). Chrome compiles in the process that composites the page and caches per site, so a stream's worth at once freezes a playing video for about a second on a new site: record `compiledKernels()` once, then `precompile` two or three names per animation frame (awaiting `device.queue.onSubmittedWorkDone()` between) before opening the stream |
 | `engine.loadModel(graphText, manifestText, weightBytes)` | an `FhModel`; the loader checks the format version and the tensor table. `model.info()`: name, training step, graph size, render sampler |
 | `engine.session(model, sessionOptions)` | an `FhSession` |
 | `engine.stream(model, sessionOptions, streamOptions)` | an `FhStream` |
 | `await engine.autotune(model, sessionOptions)` | times the conv kernels of that configuration (5 to 15 s of GPU time; run it idle, once per GPU and size) and resolves with the table as text: store it (for example in `localStorage`, keyed by GPU, size and `k`) and pass it as the `tune` session option. Resolves with an empty string on a device without timestamp queries |
+
+To check release, compare `engine.report().memory.live_bytes` before opening a stream, during playback, and
+after outstanding stream calls settle and you call `stream.free()`. `memory.peak_bytes` keeps the high-water mark
+for the engine's lifetime.
 
 Session options: `{ width, height, internal: 'auto' | 'frame' | [w, h], k, repair, render: 'model' | 'bilinear' |
 'bicubic', staticProtection: false | true | { frames, tolerance }, fastRender, linearT, keepMaps, protectionMask,

@@ -427,7 +427,7 @@ impl Session {
         self.check_out(slot)?;
         let (w, h) = (self.opts.width, self.opts.height);
         let bpr = (w * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-        let stage = self.gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let stage = self.gpu.buffer(&wgpu::BufferDescriptor {
             label: Some("fh_read_rgba"),
             size: (bpr * h) as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
@@ -448,8 +448,8 @@ impl Session {
             wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
         );
         self.gpu.queue.submit(Some(enc.finish()));
-        Ok(Readback::new(
-            stage,
+        Ok(Readback::tracked(
+            &stage,
             Box::new(move |d: &[u8]| {
                 let row = (w * 4) as usize;
                 let mut v = Vec::with_capacity(row * h as usize);

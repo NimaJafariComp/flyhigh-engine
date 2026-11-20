@@ -1,5 +1,6 @@
 //! `Session`: the CPU-frame path, two rgba buffers in and one out, one plan.
 
+use crate::gpu::memory::Buffer;
 use crate::{build_network, map_read, workgroups_2d, Blob, Gpu, MapWait, NetOpts, RgbaParams, Step, Tensor};
 use anyhow::Result;
 use serde_json::Value;
@@ -13,9 +14,9 @@ pub struct Session {
     pub hp: u32,
     pub k: u32,
     pub t: f32,
-    pub in_a: Rc<wgpu::Buffer>,
-    pub in_b: Rc<wgpu::Buffer>,
-    pub out_rgba: Rc<wgpu::Buffer>,
+    pub in_a: Rc<Buffer>,
+    pub in_b: Rc<Buffer>,
+    pub out_rgba: Rc<Buffer>,
     pub plan: Vec<Step>,
     pub env: HashMap<String, Tensor>,
 }
@@ -43,7 +44,7 @@ impl Session {
     ) -> Session {
         let (hp, wp) = (h.div_ceil(32) * 32, w.div_ceil(32) * 32);
         let u32buf = |n: u64| {
-            Rc::new(gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            Rc::new(gpu.buffer(&wgpu::BufferDescriptor {
                 label: Some("fh_rgba"),
                 size: n * 4,
                 usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,

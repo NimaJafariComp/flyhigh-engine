@@ -11,6 +11,7 @@
 //! Statistics come back through an async readback (`StatsRun`): native hosts block on it inside `push_slot`, the
 //! browser host awaits the promise of `fh_vid_stats` before the first `generate` of the interval (the lookahead hides it).
 use crate::gmhs::{CadenceScratch, PairStats, StatsRun};
+use crate::gpu::memory::Charge;
 use crate::{gmhs, Blob, Gpu, NetOpts, SessionExt, Step, TimedRun};
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -99,6 +100,7 @@ pub struct GenTex {
     pub sess: Vec<SessionExt>,
     pub ins: Vec<(wgpu::Texture, wgpu::TextureView)>,
     pub outs: Vec<(wgpu::Texture, wgpu::TextureView)>,
+    owned_slots: Vec<Charge>,
     order: [usize; 3],
     stats: [PairStats; 3],
     scratch: Option<CadenceScratch>,
@@ -245,6 +247,7 @@ impl GenTex {
             sess,
             ins: Vec::new(),
             outs: Vec::new(),
+            owned_slots: Vec::new(),
             order: [0, 1, 2],
             stats: [PairStats::default(); 3],
             scratch,
@@ -257,6 +260,7 @@ impl GenTex {
     }
     pub fn add_input(&mut self, gpu: &Gpu) -> usize {
         let t = gpu.input_texture_l(self.opts.w, self.opts.h, &format!("fh_vin_{}", self.ins.len()));
+        self.owned_slots.push(gpu.memory.rgba8_slot(&t));
         let v = t.create_view(&wgpu::TextureViewDescriptor::default());
         self.ins.push((t, v));
         self.ins.len() - 1
@@ -284,6 +288,7 @@ impl GenTex {
     }
     pub fn add_output(&mut self, gpu: &Gpu) -> usize {
         let t = gpu.output_texture_l(self.opts.w, self.opts.h, &format!("fh_vout_{}", self.outs.len()));
+        self.owned_slots.push(gpu.memory.rgba8_slot(&t));
         let v = t.create_view(&wgpu::TextureViewDescriptor::default());
         self.outs.push((t, v));
         self.outs.len() - 1

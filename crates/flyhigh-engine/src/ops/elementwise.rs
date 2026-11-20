@@ -1,5 +1,6 @@
 //! Binary and unary kernels, channel copies (views materialised), concat, zeros.
 
+use crate::gpu::memory::Buffer;
 use crate::{workgroups_2d, BinaryParams, ChannelCopyParams, Gpu, OpOutput, Step, Tensor, UnaryParams};
 use std::rc::Rc;
 
@@ -36,7 +37,7 @@ impl Gpu {
     // channel-range copy into `out` at channel dst0 from up to 7 inputs (input 0 starting at channel off0), as one
     // `chcopy` dispatch — keeps the whole frame inside one compute pass (buffer copies split passes: ~10% of K=2 time)
     // `first`: (channel offset, channel count) read from input 0; `size`: (h, w) of every input
-    fn chcopy(&self, ins: &[&Tensor], first: (u32, u32), out: &Rc<wgpu::Buffer>, dst0: u32, size: (u32, u32)) -> Step {
+    fn chcopy(&self, ins: &[&Tensor], first: (u32, u32), out: &Rc<Buffer>, dst0: u32, size: (u32, u32)) -> Step {
         let ((off0, nch0), (h, w)) = (first, size);
         debug_assert!(!ins.is_empty() && ins.len() <= 7 && (h * w).is_multiple_of(2));
         let hw2 = h * w / 2;
@@ -54,7 +55,7 @@ impl Gpu {
             *e = acc;
         }
         let p = ChannelCopyParams { hw2, ctot: acc, e: ends, o: offs, dst0, s: scl, _a: 0, _b: 0, _c: 0, _d: 0 };
-        let bufs: Vec<&wgpu::Buffer> = (0..7).map(|k| if k < ins.len() { &*ins[k].buf } else { &*self.zero }).collect();
+        let bufs: Vec<&Buffer> = (0..7).map(|k| if k < ins.len() { &*ins[k].buf } else { &*self.zero }).collect();
         self.compute_step("chcopy", &bufs, bytemuck::bytes_of(&p), out, ((acc * hw2).div_ceil(256), 1, 1))
     }
     pub fn slice(&self, x: &Tensor, a: u32, b: u32) -> OpOutput {
