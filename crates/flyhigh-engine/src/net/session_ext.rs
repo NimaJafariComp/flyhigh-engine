@@ -244,8 +244,11 @@ impl SessionExt {
     }
     /// linear_t: run the t-dependent network once for the current pair (at t = 0.5)
     pub fn mid_maps_half(&self, gpu: &Gpu) {
+        gpu.replay(&self.mid_map_steps_half(gpu));
+    }
+    pub(crate) fn mid_map_steps_half(&self, gpu: &Gpu) -> Vec<Step> {
         self.set_t(gpu, 0.5);
-        gpu.replay(&self.plan_mid.iter().map(clone_step).collect::<Vec<_>>());
+        self.plan_mid.iter().map(clone_step).collect()
     }
     pub fn mid_fast(
         &self,

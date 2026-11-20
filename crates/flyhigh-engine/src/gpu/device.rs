@@ -273,6 +273,7 @@ impl Gpu {
             bgra_storage: caps.bgra_storage,
             timestamps: caps.timestamps,
             ts_inside: caps.ts_inside,
+            timing: Default::default(),
             shader_compiler,
             arena: std::cell::RefCell::new(None),
             arena_ids: std::cell::RefCell::new(HashMap::new()),

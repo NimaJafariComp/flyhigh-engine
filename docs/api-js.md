@@ -90,9 +90,11 @@ Camera warp on a pointer-locked page: `mouse(performance.now(), e.movementX, e.m
 `warp(output, slot, out, now)` (true: present output slot `out`; false: present the frame as it is). It needs `push`
 timestamps on the same clock (`performance.now()` at arrival), not media time
 ([integration guide](integration.md#input-latency-the-camera-warp)).
-`pushTimed(slot, pts)` and `generateTimed(t, out)` do the same work under timestamp queries and add `cost`, a promise
-of the GPU milliseconds (`null` without timestamps, when nothing ran, or for a cadence composite): what the Pacer's `costSample` wants, for
-its probe requests and now and then otherwise (`generateTimed` returns `{ written, cost }`). In Firefox a pending
+`pushTimed(slot, pts)` and `generateTimed(t, out)` add `cost`, a promise of GPU milliseconds for the Pacer's
+`costSample`. If timing is unavailable or all readback slots are busy, the work still runs and `cost` resolves
+to `null`. `generateTimed` also returns `timing`, a promise of `{ setupMs, frameMs, totalMs }` or `null`.
+Its `cost` remains the per-frame time (`frameMs`). Use `totalMs` to measure the full call, including
+the once-per-pair refinement (`setupMs`), which is `null` when no setup ran. In Firefox a pending
 readback (`classify`, `stats`, a `cost`) resolves only on GPU polls (70 to 100 ms); submit an empty command buffer
 every millisecond while one is pending (`device.queue.submit([])`) and it resolves in 5 ms.
 
