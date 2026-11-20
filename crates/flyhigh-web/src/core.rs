@@ -601,8 +601,8 @@ impl FhStream {
     }
 
     /// `generate` with its GPU time: `{ written, cost, timing }`. Both promises resolve to `null` when timing
-    /// is unavailable. `cost` is total milliseconds; `timing` separates `setupMs` (first linear phase only)
-    /// from `frameMs` and includes `totalMs`.
+    /// is unavailable. `cost` is the per-frame time used by the Pacer. `timing` separates `setupMs`
+    /// (first linear phase only) from `frameMs` and includes `totalMs`.
     #[wasm_bindgen(js_name = generateTimed)]
     pub fn generate_timed(&self, t: f32, out: u32) -> Result<JsValue, JsValue> {
         let (g, run) = self.inner.borrow_mut().generate_timed(&self.gpu, t, out as usize).map_err(err)?;
@@ -623,7 +623,7 @@ impl FhStream {
             if parts.is_null() {
                 Ok(JsValue::NULL)
             } else {
-                js_sys::Reflect::get(&parts, &JsValue::from_str("totalMs"))
+                js_sys::Reflect::get(&parts, &JsValue::from_str("frameMs"))
             }
         });
         js_sys::Reflect::set(&obj, &JsValue::from_str("cost"), &cost)?;

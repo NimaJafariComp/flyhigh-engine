@@ -93,7 +93,8 @@ timestamps on the same clock (`performance.now()` at arrival), not media time
 `pushTimed(slot, pts)` and `generateTimed(t, out)` add `cost`, a promise of GPU milliseconds for the Pacer's
 `costSample`. If timing is unavailable or all readback slots are busy, the work still runs and `cost` resolves
 to `null`. `generateTimed` also returns `timing`, a promise of `{ setupMs, frameMs, totalMs }` or `null`.
-`setupMs` is the once-per-pair refinement for the linear path, or `null` when no setup ran. In Firefox a pending
+Its `cost` remains the per-frame time (`frameMs`). Use `totalMs` to measure the full call, including
+the once-per-pair refinement (`setupMs`), which is `null` when no setup ran. In Firefox a pending
 readback (`classify`, `stats`, a `cost`) resolves only on GPU polls (70 to 100 ms); submit an empty command buffer
 every millisecond while one is pending (`device.queue.submit([])`) and it resolves in 5 ms.
 
