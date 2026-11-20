@@ -522,13 +522,15 @@ impl Session {
     fn mid_steps(&self, t: f32, out: usize) -> Result<Vec<Step>> {
         let (a, b) = self.pair.get().context("pair two input slots first")?;
         let (av, bv, ov) = ((a, &self.ext.ins[a].1), (b, &self.ext.ins[b].1), (out, &self.ext.outs[out].1));
-        self.ext.set_t(&self.gpu, t);
         Ok(if self.ext.is_fast() && self.opts.linear_t {
             vec![self.ext.render_tex_step(&self.gpu, av, bv, ov, Some(t))]
-        } else if self.ext.is_fast() {
-            self.ext.mid_steps_fast(&self.gpu, av, bv, ov)
         } else {
-            self.ext.mid_steps(&self.gpu, out, ov.1)
+            self.ext.set_t(&self.gpu, t);
+            if self.ext.is_fast() {
+                self.ext.mid_steps_fast(&self.gpu, av, bv, ov)
+            } else {
+                self.ext.mid_steps(&self.gpu, out, ov.1)
+            }
         })
     }
 
@@ -553,14 +555,22 @@ impl Session {
     pub fn pair_timed_begin(&self, a: usize, b: usize) -> Result<Option<TimedRun>> {
         self.check_in(a)?;
         self.check_in(b)?;
-        Ok(self.gpu.begin_timed(&self.pair_steps(a, b)))
+        let run = self.gpu.submit_optional_timing(&[], &self.pair_steps(a, b), true);
+        self.pair.set(Some((a, b)));
+        self.half_done.set(false);
+        Ok(run)
     }
 
     /// One more generated frame of the last pair, submitted with timestamps (see `pair_timed_begin`).
     pub fn mid_timed_begin(&self, t: f32, out: usize) -> Result<Option<TimedRun>> {
         self.check_out(out)?;
         let steps = self.mid_steps(t, out)?;
-        Ok(self.gpu.begin_timed(&steps))
+        let setup = if self.ext.is_fast() && self.opts.linear_t && !self.half_done.replace(true) {
+            self.ext.mid_map_steps_half(&self.gpu)
+        } else {
+            Vec::new()
+        };
+        Ok(self.gpu.submit_optional_timing(&setup, &steps, true))
     }
 
     /// Compiles every kernel the session runs, before the first real frame: one pair and one mid on slots added for
