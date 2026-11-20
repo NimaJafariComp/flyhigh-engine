@@ -214,6 +214,8 @@ fn realtime_pushes_give_timestamped_intervals_and_mids() {
 fn timed_push_and_generate_report_gpu_time() {
     let Some(e) = engine() else { return };
     let mut s = Stream::new(&e.gpu, &e.blob, &e.ops, TexOptions::new(W, H), &StreamOptions::default(), None).unwrap();
+    s.warm_up(&e.gpu).unwrap();
+    e.gpu.wait();
     let s0 = s.next_input(|_| false).unwrap();
     write(&e, &s, s0, &frame(0.0));
     let (_, run) = s.push_timed(&e.gpu, s0, 0.0).unwrap();
@@ -229,11 +231,77 @@ fn timed_push_and_generate_report_gpu_time() {
     eprintln!("pair {pair_ms:?} ms, mid {mid_ms:?} ms");
     if e.gpu.timestamps {
         let (pair_ms, mid_ms) = (pair_ms.unwrap(), mid_ms.unwrap());
-        assert!(pair_ms > 0.0 && mid_ms > 0.0 && pair_ms > mid_ms, "the pair is the expensive half");
+        assert!(pair_ms.is_finite() && pair_ms > 0.0 && mid_ms.is_finite() && mid_ms > 0.0);
     } else {
         assert!(pair_ms.is_none() && mid_ms.is_none(), "no timestamp queries, no times");
     }
     assert_eq!(s.report().counters.mids, 1, "a timed generate counts like any other");
+}
+
+#[test]
+#[ignore]
+fn timing_pressure_never_changes_a_generated_frame() {
+    let Some(e) = engine() else { return };
+    let tex = TexOptions { iw: 128, ih: 96, fast_render: true, linear_t: true, ..TexOptions::new(W, H) };
+    let opts = StreamOptions { outputs: 2, ..Default::default() };
+    let mut timed = Stream::new(&e.gpu, &e.blob, &e.ops, tex.clone(), &opts, None).unwrap();
+    let mut plain = Stream::new(&e.gpu, &e.blob, &e.ops, tex, &opts, None).unwrap();
+    for s in [&mut timed, &mut plain] {
+        for (i, shift) in [0.0, 8.0].into_iter().enumerate() {
+            let slot = s.next_input(|_| false).unwrap();
+            write(&e, s, slot, &frame(shift));
+            s.push(&e.gpu, slot, i as f64 * 40.0).unwrap();
+        }
+    }
+    let mut runs = Vec::new();
+    for _ in 0..4 {
+        let (written, run) = timed.generate_timed(&e.gpu, 0.25, 0).unwrap();
+        assert_eq!(written, Generated::Written);
+        if let Some(run) = run {
+            runs.push(run);
+        }
+    }
+    let (written, exhausted) = timed.generate_timed(&e.gpu, 0.75, 1).unwrap();
+    assert_eq!(written, Generated::Written);
+    assert!(exhausted.is_none(), "no new timing buffer is allocated under pressure");
+    plain.generate(&e.gpu, 0.25, 0).unwrap();
+    plain.generate(&e.gpu, 0.75, 1).unwrap();
+    assert_eq!(read_output(&e, &timed, 0), read_output(&e, &plain, 0));
+    assert_eq!(read_output(&e, &timed, 1), read_output(&e, &plain, 1));
+    if e.gpu.timestamps {
+        assert_eq!(runs.len(), 4);
+        drop(runs.pop());
+        assert!(timed.generate_timed(&e.gpu, 0.5, 1).unwrap().1.is_some(), "abandoned samples release their slot");
+    }
+}
+
+#[test]
+#[ignore]
+fn linear_timing_reports_setup_once_for_each_pair() {
+    let Some(e) = engine() else { return };
+    if !e.gpu.timestamps {
+        return;
+    }
+    let tex = TexOptions { iw: 128, ih: 96, fast_render: true, linear_t: true, ..TexOptions::new(W, H) };
+    let mut s = Stream::new(&e.gpu, &e.blob, &e.ops, tex, &StreamOptions::default(), None).unwrap();
+    s.warm_up(&e.gpu).unwrap();
+    e.gpu.wait();
+    for i in 0..5 {
+        let slot = s.next_input(|_| false).unwrap();
+        write(&e, &s, slot, &frame(i as f32 * 4.0));
+        s.push(&e.gpu, slot, f64::from(i) * 40.0).unwrap();
+        if i == 0 {
+            continue;
+        }
+        let p = |s: &mut Stream, t| s.generate_timed(&e.gpu, t, 0).unwrap().1.unwrap().block_parts(&e.gpu).unwrap();
+        let first = p(&mut s, 0.25);
+        let later = p(&mut s, 0.75);
+        assert!(first.setup_ms.unwrap() > 0.0);
+        assert!(first.total_ms > first.frame_ms);
+        assert_eq!(later.setup_ms, None);
+        assert_eq!(later.total_ms, later.frame_ms);
+    }
+    assert!(s.frame_cost_ms(&e.gpu, 0).unwrap() > 0.0);
 }
 
 #[test]

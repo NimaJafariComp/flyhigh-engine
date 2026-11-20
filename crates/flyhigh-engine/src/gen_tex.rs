@@ -473,11 +473,14 @@ impl GenTex {
                     let (a, b) = ((sa, &self.ins[sa].1), (sb, &self.ins[sb].1));
                     if self.opts.linear_t {
                         // the network's t-dependent stage once per pair; each phase is then only a render
-                        if !self.half_done {
-                            s.mid_maps_half(gpu);
+                        let setup = if self.half_done {
+                            Vec::new()
+                        } else {
+                            let setup = s.mid_map_steps_half(gpu);
                             self.half_done = true;
-                        }
-                        run(gpu, &[s.render_tex_step(gpu, a, b, (out, view), Some(t))], timed)
+                            setup
+                        };
+                        gpu.submit_optional_timing(&setup, &[s.render_tex_step(gpu, a, b, (out, view), Some(t))], timed)
                     } else {
                         s.set_t(gpu, t);
                         run(gpu, &s.mid_steps_fast(gpu, a, b, (out, view)), timed)
@@ -521,11 +524,5 @@ impl GenTex {
 /// Runs `steps`; with `timed` and timestamp queries they go out under a timestamp pair instead and the run is
 /// returned to await for the GPU milliseconds.
 fn run(gpu: &Gpu, steps: &[Step], timed: bool) -> Option<TimedRun> {
-    if timed {
-        if let Some(r) = gpu.begin_timed(steps) {
-            return Some(r);
-        }
-    }
-    gpu.replay(steps);
-    None
+    gpu.submit_optional_timing(&[], steps, timed)
 }

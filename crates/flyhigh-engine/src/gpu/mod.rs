@@ -33,6 +33,7 @@ pub struct Gpu {
     pub bgra_storage: bool, // BGRA8UNORM_STORAGE: canvases that prefer bgra8unorm can be written directly
     pub timestamps: bool,   // TIMESTAMP_QUERY: gpu_time_ms works (pass-level timestamps, WebGPU-standard)
     pub ts_inside: bool,    // + TIMESTAMP_QUERY_INSIDE_ENCODERS (native): per-step profile_plan
+    pub(crate) timing: std::cell::RefCell<timing::TimingState>,
     pub shader_compiler: Option<dxc::ShaderCompiler>, // DX12: the HLSL compiler wgpu loaded (None on other backends)
     // buffer arena (Some while a plan is being built): tensors whose last reader has been built release their
     // buffer here and later tensors of the same plan reuse it — a static in-order plan makes this safe
